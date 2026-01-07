@@ -1,0 +1,80 @@
+{
+  "name": "Microscopy Standard",
+  "description": "Standard RDMP for microscopy imaging experiments",
+  "roles": [
+    {
+      "name": "steward",
+      "permissions": {
+        "can_edit_metadata": true,
+        "can_edit_paths": true,
+        "can_create_release": true,
+        "can_manage_rdmp": true
+      }
+    },
+    {
+      "name": "researcher",
+      "permissions": {
+        "can_edit_metadata": true,
+        "can_edit_paths": false,
+        "can_create_release": false,
+        "can_manage_rdmp": false
+      }
+    }
+  ],
+  "fields": [
+    {
+      "key": "microscope_type",
+      "label": "Microscope Type",
+      "type": "categorical",
+      "required": true,
+      "allowed_values": ["Confocal", "Wide-field", "Two-photon", "Light-sheet"],
+      "visibility": "public_index"
+    },
+    {
+      "key": "objective",
+      "label": "Objective",
+      "type": "string",
+      "required": true,
+      "visibility": "public_index"
+    },
+    {
+      "key": "fluorophore",
+      "label": "Fluorophore",
+      "type": "string",
+      "required": true,
+      "visibility": "public_index"
+    },
+    {
+      "key": "exposure_time_ms",
+      "label": "Exposure Time (ms)",
+      "type": "number",
+      "required": true,
+      "visibility": "collaborators"
+    },
+    {
+      "key": "z_stack_depth",
+      "label": "Z-Stack Depth (μm)",
+      "type": "number",
+      "required": false,
+      "visibility": "collaborators"
+    },
+    {
+      "key": "pixel_size_um",
+      "label": "Pixel Size (μm)",
+      "type": "number",
+      "required": false,
+      "visibility": "collaborators"
+    },
+    {
+      "key": "sample_type",
+      "label": "Sample Type",
+      "type": "string",
+      "required": true,
+      "visibility": "public_index"
+    }
+  ],
+  "ingestion_rules": {
+    "file_patterns": ["*.tif", "*.tiff", "*.nd2", "*.czi"],
+    "prompts": ["microscope_type", "fluorophore", "sample_type"]
+  }
+}

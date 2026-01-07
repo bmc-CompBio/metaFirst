@@ -1,0 +1,90 @@
+{
+  "name": "RNA-seq Standard",
+  "description": "Standard RDMP for RNA sequencing experiments",
+  "roles": [
+    {
+      "name": "PI",
+      "permissions": {
+        "can_edit_metadata": true,
+        "can_edit_paths": true,
+        "can_create_release": true,
+        "can_manage_rdmp": true
+      }
+    },
+    {
+      "name": "researcher",
+      "permissions": {
+        "can_edit_metadata": true,
+        "can_edit_paths": true,
+        "can_create_release": false,
+        "can_manage_rdmp": false
+      }
+    },
+    {
+      "name": "steward",
+      "permissions": {
+        "can_edit_metadata": true,
+        "can_edit_paths": true,
+        "can_create_release": true,
+        "can_manage_rdmp": false
+      }
+    }
+  ],
+  "fields": [
+    {
+      "key": "library_prep_kit",
+      "label": "Library Prep Kit",
+      "type": "categorical",
+      "required": true,
+      "allowed_values": ["TruSeq Stranded mRNA", "NEBNext Ultra II", "KAPA HyperPrep"],
+      "visibility": "public_index"
+    },
+    {
+      "key": "sequencing_platform",
+      "label": "Sequencing Platform",
+      "type": "categorical",
+      "required": true,
+      "allowed_values": ["Illumina NovaSeq", "Illumina NextSeq", "Illumina HiSeq"],
+      "visibility": "public_index"
+    },
+    {
+      "key": "read_length",
+      "label": "Read Length (bp)",
+      "type": "number",
+      "required": true,
+      "visibility": "public_index"
+    },
+    {
+      "key": "tissue_type",
+      "label": "Tissue Type",
+      "type": "string",
+      "required": true,
+      "visibility": "public_index"
+    },
+    {
+      "key": "treatment_condition",
+      "label": "Treatment Condition",
+      "type": "string",
+      "required": true,
+      "visibility": "public_index"
+    },
+    {
+      "key": "rna_quality_rin",
+      "label": "RNA Quality (RIN)",
+      "type": "number",
+      "required": false,
+      "visibility": "collaborators"
+    },
+    {
+      "key": "sequencing_depth",
+      "label": "Sequencing Depth (M reads)",
+      "type": "number",
+      "required": false,
+      "visibility": "collaborators"
+    }
+  ],
+  "ingestion_rules": {
+    "file_patterns": ["*.fastq.gz", "*.fq.gz"],
+    "prompts": ["library_prep_kit", "sequencing_platform", "tissue_type"]
+  }
+}

@@ -1,0 +1,82 @@
+{
+  "name": "qPCR Standard",
+  "description": "Standard RDMP for quantitative PCR experiments",
+  "roles": [
+    {
+      "name": "PI",
+      "permissions": {
+        "can_edit_metadata": true,
+        "can_edit_paths": true,
+        "can_create_release": true,
+        "can_manage_rdmp": true
+      }
+    },
+    {
+      "name": "researcher",
+      "permissions": {
+        "can_edit_metadata": true,
+        "can_edit_paths": true,
+        "can_create_release": false,
+        "can_manage_rdmp": false
+      }
+    },
+    {
+      "name": "viewer",
+      "permissions": {
+        "can_edit_metadata": false,
+        "can_edit_paths": false,
+        "can_create_release": false,
+        "can_manage_rdmp": false
+      }
+    }
+  ],
+  "fields": [
+    {
+      "key": "gene_name",
+      "label": "Gene Name",
+      "type": "string",
+      "required": true,
+      "visibility": "public_index"
+    },
+    {
+      "key": "primer_batch",
+      "label": "Primer Batch",
+      "type": "string",
+      "required": true,
+      "visibility": "collaborators"
+    },
+    {
+      "key": "cell_line",
+      "label": "Cell Line",
+      "type": "categorical",
+      "required": true,
+      "allowed_values": ["HeLa", "HEK293", "MCF7", "A549"],
+      "visibility": "public_index"
+    },
+    {
+      "key": "replicate_number",
+      "label": "Replicate Number",
+      "type": "number",
+      "required": true,
+      "visibility": "collaborators"
+    },
+    {
+      "key": "experiment_date",
+      "label": "Experiment Date",
+      "type": "date",
+      "required": true,
+      "visibility": "public_index"
+    },
+    {
+      "key": "notes",
+      "label": "Experimental Notes",
+      "type": "string",
+      "required": false,
+      "visibility": "private"
+    }
+  ],
+  "ingestion_rules": {
+    "file_patterns": ["*.csv", "*.xlsx"],
+    "prompts": ["gene_name", "cell_line", "replicate_number"]
+  }
+}

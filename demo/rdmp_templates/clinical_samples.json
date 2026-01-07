@@ -1,0 +1,83 @@
+{
+  "name": "Clinical Samples",
+  "description": "RDMP for clinical sample collection (synthetic demo data only)",
+  "roles": [
+    {
+      "name": "PI",
+      "permissions": {
+        "can_edit_metadata": true,
+        "can_edit_paths": true,
+        "can_create_release": true,
+        "can_manage_rdmp": true
+      }
+    },
+    {
+      "name": "data_manager",
+      "permissions": {
+        "can_edit_metadata": true,
+        "can_edit_paths": true,
+        "can_create_release": false,
+        "can_manage_rdmp": false
+      }
+    },
+    {
+      "name": "analyst",
+      "permissions": {
+        "can_edit_metadata": false,
+        "can_edit_paths": false,
+        "can_create_release": false,
+        "can_manage_rdmp": false
+      }
+    }
+  ],
+  "fields": [
+    {
+      "key": "patient_id",
+      "label": "Patient ID (Synthetic)",
+      "type": "string",
+      "required": true,
+      "visibility": "private"
+    },
+    {
+      "key": "collection_date",
+      "label": "Collection Date",
+      "type": "date",
+      "required": true,
+      "visibility": "collaborators"
+    },
+    {
+      "key": "sample_type",
+      "label": "Sample Type",
+      "type": "categorical",
+      "required": true,
+      "allowed_values": ["Blood", "Tissue", "Saliva", "Urine"],
+      "visibility": "public_index"
+    },
+    {
+      "key": "storage_temperature",
+      "label": "Storage Temperature (°C)",
+      "type": "number",
+      "required": true,
+      "visibility": "collaborators"
+    },
+    {
+      "key": "consent_status",
+      "label": "Consent Status",
+      "type": "categorical",
+      "required": true,
+      "allowed_values": ["Obtained", "Pending", "Withdrawn"],
+      "visibility": "private"
+    },
+    {
+      "key": "diagnosis",
+      "label": "Diagnosis Category",
+      "type": "string",
+      "required": false,
+      "visibility": "collaborators"
+    }
+  ],
+  "ingestion_rules": {
+    "file_patterns": ["*.csv", "*.xlsx"],
+    "prompts": ["patient_id", "sample_type", "collection_date"]
+  }
+}
