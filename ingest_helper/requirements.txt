@@ -1,0 +1,4 @@
+# metaFirst Ingest Helper Dependencies
+watchdog>=3.0.0
+httpx>=0.26.0
+pyyaml>=6.0

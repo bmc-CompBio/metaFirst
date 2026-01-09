@@ -1,0 +1,35 @@
+# metaFirst Ingest Helper Configuration
+# Copy this file to config.yaml and customize for your setup
+
+# Supervisor API connection
+supervisor_url: http://localhost:8000
+username: alice
+password: demo123
+
+# Ingest settings
+max_field_prompts: 3  # Max number of required fields to prompt for (0 to disable)
+compute_hash: false   # Whether to compute SHA256 hash for each file
+
+# Watched folders
+# Each watcher maps a local folder to a project and storage root
+watchers:
+  # Example 1: qPCR data folder
+  - watch_path: /Users/yourusername/data/qpcr
+    project_id: 1
+    storage_root_id: 1
+    # Optional: base path for computing relative paths (default: watch_path)
+    base_path_for_relative: /Users/yourusername/data
+    # Optional: regex pattern to extract sample identifier from filename
+    # First capturing group is used as sample identifier
+    sample_identifier_pattern: "^([A-Z]+-\\d+)"
+
+  # Example 2: RNA-seq data folder with different pattern
+  # - watch_path: /Users/yourusername/data/rnaseq
+  #   project_id: 2
+  #   storage_root_id: 2
+  #   sample_identifier_pattern: "^(RNA-\\d+)"
+
+  # Example 3: Microscopy data folder (auto-detect sample from parent folder name)
+  # - watch_path: /Users/yourusername/data/microscopy
+  #   project_id: 3
+  #   storage_root_id: 3
