@@ -9,6 +9,7 @@ from supervisor.models.sample import Sample, SampleFieldValue
 from supervisor.models.raw_data import RawDataItem, PathChange
 from supervisor.models.audit import AuditLog
 from supervisor.models.release import Release
+from supervisor.models.pending_ingest import PendingIngest, IngestStatus
 
 __all__ = [
     "User",
@@ -25,4 +26,6 @@ __all__ = [
     "PathChange",
     "AuditLog",
     "Release",
+    "PendingIngest",
+    "IngestStatus",
 ]

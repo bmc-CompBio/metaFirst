@@ -1,5 +1,7 @@
 """Storage roots, mappings, and raw data API."""
 
+import json
+from datetime import datetime, timezone
 from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
@@ -10,7 +12,8 @@ from supervisor.models.project import Project
 from supervisor.models.membership import Membership
 from supervisor.models.storage import StorageRoot, StorageRootMapping
 from supervisor.models.raw_data import RawDataItem, PathChange
-from supervisor.models.sample import Sample
+from supervisor.models.sample import Sample, SampleFieldValue
+from supervisor.models.pending_ingest import PendingIngest, IngestStatus
 from supervisor.schemas.storage import (
     StorageRoot as StorageRootSchema,
     StorageRootCreate,
@@ -21,6 +24,10 @@ from supervisor.schemas.storage import (
     RawDataItemWithDetails,
     PathUpdateRequest,
     PathChange as PathChangeSchema,
+    PendingIngestCreate,
+    PendingIngest as PendingIngestSchema,
+    PendingIngestWithDetails,
+    PendingIngestFinalize,
 )
 from supervisor.api.deps import get_current_active_user
 from supervisor.services.permission_service import check_permission
@@ -627,3 +634,360 @@ def get_path_history(
     )
 
     return path_changes
+
+
+# ============================================================================
+# Pending Ingests
+# ============================================================================
+
+
+@router.post(
+    "/projects/{project_id}/pending-ingests",
+    response_model=PendingIngestSchema,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_pending_ingest(
+    project_id: int,
+    ingest_data: PendingIngestCreate,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    """Create a pending ingest for browser-based completion."""
+    # Check project exists
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
+        )
+
+    # Check permission (require can_edit_paths to create pending ingests)
+    if not check_permission(db, current_user, project_id, "can_edit_paths"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions to create pending ingests",
+        )
+
+    # Verify storage root exists and belongs to this project
+    storage_root = (
+        db.query(StorageRoot).filter(StorageRoot.id == ingest_data.storage_root_id).first()
+    )
+    if not storage_root:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Storage root not found"
+        )
+    if storage_root.project_id != project_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Storage root does not belong to this project",
+        )
+
+    # Check if this path already has a pending ingest
+    existing_pending = (
+        db.query(PendingIngest)
+        .filter(
+            PendingIngest.storage_root_id == ingest_data.storage_root_id,
+            PendingIngest.relative_path == ingest_data.relative_path,
+            PendingIngest.status == IngestStatus.PENDING.value,
+        )
+        .first()
+    )
+    if existing_pending:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Path is already pending ingest",
+        )
+
+    # Check if this path is already registered as raw data
+    existing_raw = (
+        db.query(RawDataItem)
+        .filter(
+            RawDataItem.storage_root_id == ingest_data.storage_root_id,
+            RawDataItem.relative_path == ingest_data.relative_path,
+        )
+        .first()
+    )
+    if existing_raw:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This path is already registered as raw data",
+        )
+
+    # Create pending ingest
+    pending_ingest = PendingIngest(
+        project_id=project_id,
+        storage_root_id=ingest_data.storage_root_id,
+        relative_path=ingest_data.relative_path,
+        inferred_sample_identifier=ingest_data.inferred_sample_identifier,
+        file_size_bytes=ingest_data.file_size_bytes,
+        file_hash_sha256=ingest_data.file_hash_sha256,
+        status=IngestStatus.PENDING.value,
+        created_by=current_user.id,
+    )
+    db.add(pending_ingest)
+    db.commit()
+    db.refresh(pending_ingest)
+
+    return pending_ingest
+
+
+@router.get(
+    "/projects/{project_id}/pending-ingests",
+    response_model=list[PendingIngestWithDetails],
+)
+def list_pending_ingests(
+    project_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    status_filter: str | None = Query(None, description="Filter by status (PENDING, COMPLETED, CANCELLED)"),
+):
+    """List pending ingests for a project."""
+    # Check membership
+    membership = (
+        db.query(Membership)
+        .filter(Membership.project_id == project_id, Membership.user_id == current_user.id)
+        .first()
+    )
+    if not membership:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this project"
+        )
+
+    # Build query
+    query = db.query(PendingIngest).filter(PendingIngest.project_id == project_id)
+
+    if status_filter:
+        query = query.filter(PendingIngest.status == status_filter)
+    else:
+        # Default to showing only PENDING
+        query = query.filter(PendingIngest.status == IngestStatus.PENDING.value)
+
+    pending_ingests = query.order_by(PendingIngest.created_at.desc()).all()
+
+    # Enrich with details
+    result = []
+    for item in pending_ingests:
+        storage_root_name = item.storage_root.name if item.storage_root else None
+        project_name = item.project.name if item.project else None
+
+        result.append(
+            PendingIngestWithDetails(
+                id=item.id,
+                project_id=item.project_id,
+                storage_root_id=item.storage_root_id,
+                relative_path=item.relative_path,
+                inferred_sample_identifier=item.inferred_sample_identifier,
+                file_size_bytes=item.file_size_bytes,
+                file_hash_sha256=item.file_hash_sha256,
+                status=item.status,
+                created_at=item.created_at,
+                created_by=item.created_by,
+                completed_at=item.completed_at,
+                raw_data_item_id=item.raw_data_item_id,
+                storage_root_name=storage_root_name,
+                project_name=project_name,
+            )
+        )
+
+    return result
+
+
+@router.get("/pending-ingests/{pending_ingest_id}", response_model=PendingIngestWithDetails)
+def get_pending_ingest(
+    pending_ingest_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    """Get a specific pending ingest."""
+    item = db.query(PendingIngest).filter(PendingIngest.id == pending_ingest_id).first()
+    if not item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Pending ingest not found"
+        )
+
+    # Check membership
+    membership = (
+        db.query(Membership)
+        .filter(
+            Membership.project_id == item.project_id,
+            Membership.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not membership:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this project"
+        )
+
+    storage_root_name = item.storage_root.name if item.storage_root else None
+    project_name = item.project.name if item.project else None
+
+    return PendingIngestWithDetails(
+        id=item.id,
+        project_id=item.project_id,
+        storage_root_id=item.storage_root_id,
+        relative_path=item.relative_path,
+        inferred_sample_identifier=item.inferred_sample_identifier,
+        file_size_bytes=item.file_size_bytes,
+        file_hash_sha256=item.file_hash_sha256,
+        status=item.status,
+        created_at=item.created_at,
+        created_by=item.created_by,
+        completed_at=item.completed_at,
+        raw_data_item_id=item.raw_data_item_id,
+        storage_root_name=storage_root_name,
+        project_name=project_name,
+    )
+
+
+@router.post("/pending-ingests/{pending_ingest_id}/finalize", response_model=RawDataItemWithDetails)
+def finalize_pending_ingest(
+    pending_ingest_id: int,
+    finalize_data: PendingIngestFinalize,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    """Finalize a pending ingest, creating the raw data item and optionally sample/fields."""
+    # Get pending ingest
+    pending = db.query(PendingIngest).filter(PendingIngest.id == pending_ingest_id).first()
+    if not pending:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Pending ingest not found"
+        )
+
+    if pending.status != IngestStatus.PENDING.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Pending ingest is not in PENDING status",
+        )
+
+    # Check permission
+    if not check_permission(db, current_user, pending.project_id, "can_edit_paths"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions to finalize ingest",
+        )
+
+    # Determine sample_id
+    sample_id = finalize_data.sample_id
+
+    # Create new sample if sample_identifier provided and no sample_id
+    if finalize_data.sample_identifier and not sample_id:
+        # Check if sample already exists
+        existing_sample = (
+            db.query(Sample)
+            .filter(
+                Sample.project_id == pending.project_id,
+                Sample.sample_identifier == finalize_data.sample_identifier,
+            )
+            .first()
+        )
+        if existing_sample:
+            sample_id = existing_sample.id
+        else:
+            # Create new sample
+            new_sample = Sample(
+                project_id=pending.project_id,
+                sample_identifier=finalize_data.sample_identifier,
+                created_by=current_user.id,
+            )
+            db.add(new_sample)
+            db.flush()
+            sample_id = new_sample.id
+
+    # Create raw data item
+    raw_data_item = RawDataItem(
+        project_id=pending.project_id,
+        sample_id=sample_id,
+        storage_root_id=pending.storage_root_id,
+        relative_path=pending.relative_path,
+        storage_owner_user_id=pending.created_by,
+        file_size_bytes=pending.file_size_bytes,
+        file_hash_sha256=pending.file_hash_sha256,
+        created_by=current_user.id,
+    )
+    db.add(raw_data_item)
+    db.flush()
+
+    # Set field values if provided
+    if finalize_data.field_values and sample_id:
+        for field_key, value in finalize_data.field_values.items():
+            if value is not None:
+                field_value = SampleFieldValue(
+                    sample_id=sample_id,
+                    field_key=field_key,
+                    value_json=json.dumps(value),
+                    value_text=str(value),
+                    updated_by=current_user.id,
+                )
+                db.add(field_value)
+
+    # Audit log
+    log_create(
+        db=db,
+        project_id=pending.project_id,
+        actor_user_id=current_user.id,
+        target_type="RawDataItem",
+        target_id=raw_data_item.id,
+        after_state=serialize_raw_data_item(raw_data_item),
+    )
+
+    # Update pending ingest status
+    pending.status = IngestStatus.COMPLETED.value
+    pending.completed_at = datetime.now(timezone.utc)
+    pending.raw_data_item_id = raw_data_item.id
+
+    db.commit()
+    db.refresh(raw_data_item)
+
+    # Return enriched response
+    storage_root_name = raw_data_item.storage_root.name if raw_data_item.storage_root else None
+    sample_identifier = raw_data_item.sample.sample_identifier if raw_data_item.sample else None
+
+    return RawDataItemWithDetails(
+        id=raw_data_item.id,
+        project_id=raw_data_item.project_id,
+        sample_id=raw_data_item.sample_id,
+        storage_root_id=raw_data_item.storage_root_id,
+        relative_path=raw_data_item.relative_path,
+        storage_owner_user_id=raw_data_item.storage_owner_user_id,
+        file_size_bytes=raw_data_item.file_size_bytes,
+        file_hash_sha256=raw_data_item.file_hash_sha256,
+        created_at=raw_data_item.created_at,
+        created_by=raw_data_item.created_by,
+        storage_root_name=storage_root_name,
+        sample_identifier=sample_identifier,
+    )
+
+
+@router.delete("/pending-ingests/{pending_ingest_id}", response_model=PendingIngestSchema)
+def cancel_pending_ingest(
+    pending_ingest_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    """Cancel a pending ingest."""
+    pending = db.query(PendingIngest).filter(PendingIngest.id == pending_ingest_id).first()
+    if not pending:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Pending ingest not found"
+        )
+
+    if pending.status != IngestStatus.PENDING.value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Pending ingest is not in PENDING status"
+        )
+
+    # Check permission
+    if not check_permission(db, current_user, pending.project_id, "can_edit_paths"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions to cancel ingest",
+        )
+
+    pending.status = IngestStatus.CANCELLED.value
+    pending.completed_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(pending)
+
+    return pending

@@ -12,6 +12,8 @@ from supervisor.models.user import User
 from supervisor.models.project import Project
 from supervisor.models.membership import Membership
 from supervisor.models.rdmp import RDMPVersion
+from supervisor.models.storage import StorageRoot
+from supervisor.models.sample import Sample
 from supervisor.utils.security import hash_password
 
 
@@ -195,3 +197,31 @@ def auth_headers_user2(client, test_user2) -> dict:
     )
     token = response.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def test_storage_root(db, test_project) -> StorageRoot:
+    """Create a test storage root."""
+    storage_root = StorageRoot(
+        project_id=test_project.id,
+        name="Test Storage",
+        description="A test storage root",
+    )
+    db.add(storage_root)
+    db.commit()
+    db.refresh(storage_root)
+    return storage_root
+
+
+@pytest.fixture
+def test_sample(db, test_project, test_user) -> Sample:
+    """Create a test sample."""
+    sample = Sample(
+        project_id=test_project.id,
+        sample_identifier="SAMPLE-001",
+        created_by=test_user.id,
+    )
+    db.add(sample)
+    db.commit()
+    db.refresh(sample)
+    return sample

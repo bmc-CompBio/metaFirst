@@ -1,6 +1,7 @@
 """Storage root and raw data schemas."""
 
 from datetime import datetime
+from typing import Any
 from pydantic import BaseModel, Field, field_validator
 import re
 
@@ -157,3 +158,67 @@ class PathChange(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ============================================================================
+# Pending Ingest Schemas
+# ============================================================================
+
+
+class PendingIngestCreate(BaseModel):
+    """Create a pending ingest."""
+
+    storage_root_id: int
+    relative_path: str = Field(..., min_length=1, max_length=2048)
+    inferred_sample_identifier: str | None = None
+    file_size_bytes: int | None = None
+    file_hash_sha256: str | None = Field(None, max_length=64)
+
+    @field_validator("relative_path")
+    @classmethod
+    def validate_relative_path(cls, v: str) -> str:
+        """Validate relative path."""
+        if v.startswith("/") or v.startswith("\\") or (len(v) > 1 and v[1] == ":"):
+            raise ValueError("Path must be relative, not absolute")
+        parts = re.split(r"[/\\]", v)
+        if ".." in parts:
+            raise ValueError("Path traversal (..) is not allowed")
+        normalized = "/".join(p for p in parts if p)
+        if not normalized:
+            raise ValueError("Path cannot be empty")
+        return normalized
+
+
+class PendingIngest(BaseModel):
+    """Pending ingest response schema."""
+
+    id: int
+    project_id: int
+    storage_root_id: int
+    relative_path: str
+    inferred_sample_identifier: str | None
+    file_size_bytes: int | None
+    file_hash_sha256: str | None
+    status: str
+    created_at: datetime
+    created_by: int
+    completed_at: datetime | None
+    raw_data_item_id: int | None
+
+    class Config:
+        from_attributes = True
+
+
+class PendingIngestWithDetails(PendingIngest):
+    """Pending ingest with storage root details."""
+
+    storage_root_name: str | None = None
+    project_name: str | None = None
+
+
+class PendingIngestFinalize(BaseModel):
+    """Finalize a pending ingest."""
+
+    sample_id: int | None = None
+    sample_identifier: str | None = None  # Create new sample if provided and sample_id is None
+    field_values: dict[str, Any] | None = None  # Field key -> value mapping
