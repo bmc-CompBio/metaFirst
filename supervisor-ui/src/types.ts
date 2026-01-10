@@ -80,3 +80,34 @@ export interface AuthState {
   token: string | null;
   user: User | null;
 }
+
+export interface StorageRoot {
+  id: number;
+  project_id: number;
+  name: string;
+  description: string | null;
+  created_at: string;
+}
+
+export interface PendingIngest {
+  id: number;
+  project_id: number;
+  storage_root_id: number;
+  relative_path: string;
+  inferred_sample_identifier: string | null;
+  file_size_bytes: number | null;
+  file_hash_sha256: string | null;
+  status: 'PENDING' | 'COMPLETED' | 'CANCELLED';
+  created_at: string;
+  created_by: number;
+  completed_at: string | null;
+  raw_data_item_id: number | null;
+  storage_root_name?: string;
+  project_name?: string;
+}
+
+export interface PendingIngestFinalize {
+  sample_id?: number;
+  sample_identifier?: string;
+  field_values?: Record<string, unknown>;
+}

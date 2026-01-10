@@ -1,4 +1,4 @@
-import type { Project, RDMP, Sample, RawDataItem, User } from '../types';
+import type { Project, RDMP, Sample, RawDataItem, User, StorageRoot, PendingIngest, PendingIngestFinalize } from '../types';
 
 const API_BASE = '/api';
 
@@ -13,9 +13,8 @@ class ApiClient {
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
-    const headers: HeadersInit = {
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...options.headers,
     };
 
     if (this.token) {
@@ -85,6 +84,51 @@ class ApiClient {
   async getRawData(projectId: number, sampleId?: number): Promise<RawDataItem[]> {
     const params = sampleId ? `?sample_id=${sampleId}` : '';
     return this.request<RawDataItem[]>(`/projects/${projectId}/raw-data${params}`);
+  }
+
+  // Storage Roots
+  async getStorageRoots(projectId: number): Promise<StorageRoot[]> {
+    return this.request<StorageRoot[]>(`/projects/${projectId}/storage-roots`);
+  }
+
+  // Pending Ingests
+  async getPendingIngests(projectId: number, status?: string): Promise<PendingIngest[]> {
+    const params = status ? `?status_filter=${status}` : '';
+    return this.request<PendingIngest[]>(`/projects/${projectId}/pending-ingests${params}`);
+  }
+
+  async getPendingIngest(pendingIngestId: number): Promise<PendingIngest> {
+    return this.request<PendingIngest>(`/pending-ingests/${pendingIngestId}`);
+  }
+
+  async finalizePendingIngest(
+    pendingIngestId: number,
+    data: PendingIngestFinalize
+  ): Promise<RawDataItem> {
+    return this.request<RawDataItem>(`/pending-ingests/${pendingIngestId}/finalize`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async cancelPendingIngest(pendingIngestId: number): Promise<PendingIngest> {
+    return this.request<PendingIngest>(`/pending-ingests/${pendingIngestId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async createSample(projectId: number, sampleIdentifier: string): Promise<Sample> {
+    return this.request<Sample>(`/projects/${projectId}/samples`, {
+      method: 'POST',
+      body: JSON.stringify({ sample_identifier: sampleIdentifier }),
+    });
+  }
+
+  async setSampleField(sampleId: number, fieldKey: string, value: unknown): Promise<void> {
+    await this.request<void>(`/samples/${sampleId}/fields/${fieldKey}`, {
+      method: 'PUT',
+      body: JSON.stringify({ value }),
+    });
   }
 }
 

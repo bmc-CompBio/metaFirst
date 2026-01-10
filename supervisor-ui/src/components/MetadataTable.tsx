@@ -1,24 +1,45 @@
 import { useMemo } from 'react';
-import type { Sample, RDMPField, RawDataItem } from '../types';
+import type { Sample, RDMPField, RawDataItem, StorageRoot } from '../types';
 
 interface MetadataTableProps {
   samples: Sample[];
   fields: RDMPField[];
   rawData: RawDataItem[];
   loading: boolean;
+  storageRoots?: StorageRoot[];
+  onSelectSample?: (sample: Sample) => void;
 }
 
-export function MetadataTable({ samples, fields, rawData, loading }: MetadataTableProps) {
-  // Build a map of sample_id -> raw data count
-  const rawDataCountBySample = useMemo(() => {
-    const counts: Record<number, number> = {};
+export function MetadataTable({ samples, fields, rawData, loading, storageRoots = [], onSelectSample }: MetadataTableProps) {
+  // Build a map of sample_id -> raw data info
+  const rawDataBySample = useMemo(() => {
+    const data: Record<number, { count: number; storageRootIds: Set<number> }> = {};
     for (const item of rawData) {
       if (item.sample_id) {
-        counts[item.sample_id] = (counts[item.sample_id] || 0) + 1;
+        if (!data[item.sample_id]) {
+          data[item.sample_id] = { count: 0, storageRootIds: new Set() };
+        }
+        data[item.sample_id].count += 1;
+        data[item.sample_id].storageRootIds.add(item.storage_root_id);
       }
     }
-    return counts;
+    return data;
   }, [rawData]);
+
+  // Build storage root name lookup
+  const storageRootNames = useMemo(() => {
+    const names: Record<number, string> = {};
+    for (const root of storageRoots) {
+      names[root.id] = root.name;
+    }
+    return names;
+  }, [storageRoots]);
+
+  const getStorageRootNames = (storageRootIds: Set<number>) => {
+    return Array.from(storageRootIds)
+      .map(id => storageRootNames[id] || `Root ${id}`)
+      .join(', ');
+  };
 
   if (loading) {
     return <div style={styles.loading}>Loading samples...</div>;
@@ -59,36 +80,57 @@ export function MetadataTable({ samples, fields, rawData, loading }: MetadataTab
                 </th>
               ))}
               <th style={styles.th}>Files</th>
+              <th style={styles.th}>Storage Roots</th>
               <th style={styles.th}>Status</th>
             </tr>
           </thead>
           <tbody>
-            {samples.map((sample) => (
-              <tr key={sample.id} style={styles.row}>
-                <td style={styles.td}>
-                  <span style={styles.sampleId}>{sample.sample_identifier}</span>
-                </td>
-                {fields.map((field) => (
-                  <td key={field.key} style={styles.td}>
-                    {renderFieldValue(sample.fields[field.key], field)}
+            {samples.map((sample) => {
+              const sampleData = rawDataBySample[sample.id];
+              const fileCount = sampleData?.count || 0;
+              const storageRootDisplay = sampleData
+                ? getStorageRootNames(sampleData.storageRootIds)
+                : '-';
+
+              return (
+                <tr
+                  key={sample.id}
+                  style={{
+                    ...styles.row,
+                    ...(onSelectSample ? styles.rowClickable : {}),
+                  }}
+                  onClick={() => onSelectSample?.(sample)}
+                >
+                  <td style={styles.td}>
+                    <span style={styles.sampleId}>{sample.sample_identifier}</span>
                   </td>
-                ))}
-                <td style={styles.td}>
-                  <span style={styles.fileCount}>
-                    {rawDataCountBySample[sample.id] || 0}
-                  </span>
-                </td>
-                <td style={styles.td}>
-                  {sample.completeness.is_complete ? (
-                    <span style={styles.complete}>Complete</span>
-                  ) : (
-                    <span style={styles.incomplete}>
-                      Missing: {sample.completeness.missing_fields.join(', ')}
+                  {fields.map((field) => (
+                    <td key={field.key} style={styles.td}>
+                      {renderFieldValue(sample.fields[field.key], field)}
+                    </td>
+                  ))}
+                  <td style={styles.td}>
+                    <span style={styles.fileCount}>
+                      {fileCount}
                     </span>
-                  )}
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td style={styles.td}>
+                    <span style={styles.storageRoots}>
+                      {storageRootDisplay}
+                    </span>
+                  </td>
+                  <td style={styles.td}>
+                    {sample.completeness.is_complete ? (
+                      <span style={styles.complete}>Complete</span>
+                    ) : (
+                      <span style={styles.incomplete}>
+                        Missing: {sample.completeness.missing_fields.join(', ')}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -102,6 +144,9 @@ export function MetadataTable({ samples, fields, rawData, loading }: MetadataTab
         </span>
         <span style={styles.legendItem}>
           {fields.length} field{fields.length !== 1 ? 's' : ''}
+        </span>
+        <span style={styles.legendItem}>
+          {rawData.length} file{rawData.length !== 1 ? 's' : ''}
         </span>
       </div>
     </div>
@@ -166,6 +211,10 @@ const styles: Record<string, React.CSSProperties> = {
   row: {
     borderBottom: '1px solid #e5e7eb',
   },
+  rowClickable: {
+    cursor: 'pointer',
+    transition: 'background 0.15s',
+  },
   td: {
     padding: '12px 16px',
     verticalAlign: 'top',
@@ -199,6 +248,11 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '4px',
     fontSize: '12px',
     fontWeight: 500,
+  },
+  storageRoots: {
+    fontSize: '12px',
+    color: '#6b7280',
+    fontStyle: 'italic',
   },
   complete: {
     color: '#059669',

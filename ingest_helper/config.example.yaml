@@ -6,8 +6,11 @@ supervisor_url: http://localhost:8000
 username: alice
 password: demo123
 
+# UI settings (for browser-based metadata entry)
+ui_url: http://localhost:5173  # URL of the supervisor UI
+open_browser: true             # Auto-open browser when file detected
+
 # Ingest settings
-max_field_prompts: 3  # Max number of required fields to prompt for (0 to disable)
 compute_hash: false   # Whether to compute SHA256 hash for each file
 
 # Watched folders

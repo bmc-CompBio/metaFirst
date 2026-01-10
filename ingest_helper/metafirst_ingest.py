@@ -2,8 +2,8 @@
 """
 metaFirst Ingest Helper
 
-A watchdog-based tool that watches folders on user machines and registers
-new raw data references + sample metadata in the supervisor DB via API.
+A watchdog-based tool that watches folders on user machines and creates
+pending ingests in the supervisor for browser-based metadata entry.
 """
 
 import os
@@ -11,6 +11,7 @@ import sys
 import time
 import re
 import hashlib
+import webbrowser
 from pathlib import Path
 from typing import Any
 
@@ -140,6 +141,29 @@ class SupervisorClient:
 
         return self._request("POST", f"/api/projects/{project_id}/raw-data", json=data)
 
+    def create_pending_ingest(
+        self,
+        project_id: int,
+        storage_root_id: int,
+        relative_path: str,
+        inferred_sample_identifier: str | None = None,
+        file_size_bytes: int | None = None,
+        file_hash_sha256: str | None = None,
+    ) -> dict:
+        """Create a pending ingest for browser-based metadata entry."""
+        data = {
+            "storage_root_id": storage_root_id,
+            "relative_path": relative_path,
+        }
+        if inferred_sample_identifier:
+            data["inferred_sample_identifier"] = inferred_sample_identifier
+        if file_size_bytes:
+            data["file_size_bytes"] = file_size_bytes
+        if file_hash_sha256:
+            data["file_hash_sha256"] = file_hash_sha256
+
+        return self._request("POST", f"/api/projects/{project_id}/pending-ingests", json=data)
+
     def close(self):
         """Close the HTTP client."""
         self._client.close()
@@ -193,33 +217,23 @@ def compute_file_hash(file_path: Path, chunk_size: int = 8192) -> str:
     return sha256.hexdigest()
 
 
-def prompt_for_value(prompt: str, default: str | None = None) -> str | None:
-    """Prompt user for a value with optional default."""
-    if default:
-        user_input = input(f"{prompt} [{default}]: ").strip()
-        return user_input if user_input else default
-    else:
-        user_input = input(f"{prompt} (press Enter to skip): ").strip()
-        return user_input if user_input else None
-
-
 class IngestEventHandler(FileSystemEventHandler):
-    """Handler for file creation events."""
+    """Handler for file creation events - creates pending ingests for browser-based entry."""
 
     def __init__(
         self,
         client: SupervisorClient,
         watcher_config: WatcherConfig,
-        rdmp_fields: list[dict] | None = None,
-        max_field_prompts: int = 3,
         compute_hash: bool = False,
+        open_browser: bool = False,
+        ui_base_url: str | None = None,
     ):
         super().__init__()
         self.client = client
         self.config = watcher_config
-        self.rdmp_fields = rdmp_fields or []
-        self.max_field_prompts = max_field_prompts
         self.compute_hash = compute_hash
+        self.open_browser = open_browser
+        self.ui_base_url = ui_base_url or "http://localhost:5173"
         self.processed_files: set[str] = set()
 
     def on_created(self, event: FileCreatedEvent):
@@ -248,7 +262,7 @@ class IngestEventHandler(FileSystemEventHandler):
             print(f"[ERROR] Failed to process {file_path}: {e}")
 
     def _process_file(self, file_path: Path):
-        """Process a newly created file."""
+        """Process a newly created file - create pending ingest."""
         print(f"\n[NEW FILE] {file_path}")
 
         # Compute relative path
@@ -260,81 +274,37 @@ class IngestEventHandler(FileSystemEventHandler):
 
         print(f"  Relative path: {relative_path}")
 
-        # Extract or prompt for sample identifier
-        sample_identifier = self.config.extract_sample_identifier(file_path)
-        if sample_identifier:
-            print(f"  Auto-detected sample identifier: {sample_identifier}")
-            confirm = input("  Confirm or enter new identifier (Enter to accept): ").strip()
-            if confirm:
-                sample_identifier = confirm
-        else:
-            sample_identifier = prompt_for_value("  Sample identifier")
-
-        # Find or create sample if identifier provided
-        sample_id = None
-        if sample_identifier:
-            try:
-                sample = self.client.find_or_create_sample(
-                    self.config.project_id, sample_identifier
-                )
-                sample_id = sample["id"]
-                print(f"  Linked to sample: {sample_identifier} (ID: {sample_id})")
-            except Exception as e:
-                print(f"  [WARN] Could not create/find sample: {e}")
+        # Extract sample identifier from filename pattern (if configured)
+        inferred_sample_identifier = self.config.extract_sample_identifier(file_path)
+        if inferred_sample_identifier:
+            print(f"  Inferred sample identifier: {inferred_sample_identifier}")
 
         # Get file metadata
         file_size = file_path.stat().st_size
         file_hash = compute_file_hash(file_path) if self.compute_hash else None
 
-        # Register raw data item
+        # Create pending ingest (no terminal prompts)
         try:
-            raw_data_item = self.client.create_raw_data_item(
+            pending_ingest = self.client.create_pending_ingest(
                 project_id=self.config.project_id,
                 storage_root_id=self.config.storage_root_id,
                 relative_path=relative_path,
-                sample_id=sample_id,
+                inferred_sample_identifier=inferred_sample_identifier,
                 file_size_bytes=file_size,
                 file_hash_sha256=file_hash,
             )
-            print(f"  [OK] Registered raw data item (ID: {raw_data_item['id']})")
+            print(f"  [OK] Created pending ingest (ID: {pending_ingest['id']})")
+            print(f"       Complete metadata entry in browser at:")
+            ingest_url = f"{self.ui_base_url}/ingest/{pending_ingest['id']}"
+            print(f"       {ingest_url}")
+
+            # Optionally open browser
+            if self.open_browser:
+                webbrowser.open(ingest_url)
+                print(f"  [BROWSER] Opened ingest page")
+
         except Exception as e:
-            print(f"  [ERROR] Failed to register raw data: {e}")
-            return
-
-        # Prompt for RDMP fields (limited to max_field_prompts)
-        if sample_id and self.rdmp_fields:
-            required_fields = [
-                f for f in self.rdmp_fields
-                if f.get("required", False)
-            ][:self.max_field_prompts]
-
-            if required_fields:
-                print(f"  Set up to {len(required_fields)} required fields (press Enter to skip):")
-
-            for field in required_fields:
-                field_key = field["key"]
-                field_type = field.get("type", "string")
-                allowed_values = field.get("allowed_values", [])
-
-                if allowed_values:
-                    print(f"    Allowed values for {field_key}: {', '.join(allowed_values)}")
-
-                value = prompt_for_value(f"    {field_key} ({field_type})")
-
-                if value:
-                    # Convert value based on type
-                    if field_type == "number":
-                        try:
-                            value = float(value)
-                        except ValueError:
-                            print(f"    [WARN] Invalid number, skipping field")
-                            continue
-
-                    try:
-                        self.client.set_sample_field(sample_id, field_key, value)
-                        print(f"    [OK] Set {field_key} = {value}")
-                    except Exception as e:
-                        print(f"    [WARN] Could not set field: {e}")
+            print(f"  [ERROR] Failed to create pending ingest: {e}")
 
 
 def load_config(config_path: str) -> dict:
@@ -362,6 +332,13 @@ def run_watcher(config_path: str):
         print(f"[ERROR] Failed to connect: {e}")
         sys.exit(1)
 
+    # Get UI settings
+    ui_base_url = config.get("ui_url", "http://localhost:5173")
+    open_browser = config.get("open_browser", False)
+
+    print(f"[INFO] UI URL: {ui_base_url}")
+    print(f"[INFO] Auto-open browser: {open_browser}")
+
     # Set up observers for each watcher
     observer = Observer()
     handlers = []
@@ -375,16 +352,12 @@ def run_watcher(config_path: str):
             sample_identifier_pattern=watcher_cfg.get("sample_identifier_pattern"),
         )
 
-        # Get RDMP fields for field prompting
-        rdmp = client.get_rdmp(watcher_config.project_id)
-        rdmp_fields = rdmp.get("rdmp_json", {}).get("fields", []) if rdmp else []
-
         handler = IngestEventHandler(
             client=client,
             watcher_config=watcher_config,
-            rdmp_fields=rdmp_fields,
-            max_field_prompts=config.get("max_field_prompts", 3),
             compute_hash=config.get("compute_hash", False),
+            open_browser=open_browser,
+            ui_base_url=ui_base_url,
         )
         handlers.append(handler)
 
@@ -423,10 +396,11 @@ def main():
         print("\nExample config.yaml:")
         print("""
 supervisor_url: http://localhost:8000
+ui_url: http://localhost:5173
 username: alice
 password: demo123
-max_field_prompts: 3
 compute_hash: false
+open_browser: true  # Open browser when new file detected
 watchers:
   - watch_path: /path/to/data/folder
     project_id: 1

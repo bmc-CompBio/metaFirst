@@ -4,7 +4,12 @@ import { Login } from './components/Login';
 import { Header } from './components/Header';
 import { ProjectSelector } from './components/ProjectSelector';
 import { MetadataTable } from './components/MetadataTable';
-import type { User, Project, RDMP, Sample, RawDataItem } from './types';
+import { IngestInbox } from './components/IngestInbox';
+import { IngestForm } from './components/IngestForm';
+import { SampleDetailModal } from './components/SampleDetailModal';
+import type { User, Project, RDMP, Sample, RawDataItem, PendingIngest, StorageRoot } from './types';
+
+type View = 'metadata' | 'ingest-inbox' | 'ingest-form';
 
 function App() {
   // Auth state
@@ -14,12 +19,18 @@ function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
 
+  // Navigation state
+  const [currentView, setCurrentView] = useState<View>('metadata');
+  const [selectedPendingIngest, setSelectedPendingIngest] = useState<PendingIngest | null>(null);
+  const [selectedSample, setSelectedSample] = useState<Sample | null>(null);
+
   // Data state
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [rdmp, setRdmp] = useState<RDMP | null>(null);
   const [samples, setSamples] = useState<Sample[]>([]);
   const [rawData, setRawData] = useState<RawDataItem[]>([]);
+  const [storageRoots, setStorageRoots] = useState<StorageRoot[]>([]);
 
   // Loading states
   const [loadingProjects, setLoadingProjects] = useState(false);
@@ -71,14 +82,16 @@ function App() {
   const loadProjectData = async (projectId: number) => {
     setLoadingData(true);
     try {
-      const [rdmpData, samplesData, rawDataData] = await Promise.all([
+      const [rdmpData, samplesData, rawDataData, storageRootsData] = await Promise.all([
         apiClient.getProjectRDMP(projectId).catch(() => null),
         apiClient.getSamples(projectId),
         apiClient.getRawData(projectId),
+        apiClient.getStorageRoots(projectId),
       ]);
       setRdmp(rdmpData);
       setSamples(samplesData);
       setRawData(rawDataData);
+      setStorageRoots(storageRootsData);
     } catch (error) {
       console.error('Failed to load project data:', error);
     } finally {
@@ -104,6 +117,10 @@ function App() {
     setRdmp(null);
     setSamples([]);
     setRawData([]);
+    setStorageRoots([]);
+    setCurrentView('metadata');
+    setSelectedPendingIngest(null);
+    setSelectedSample(null);
   }, []);
 
   const handleProjectSelect = useCallback((projectId: number) => {
@@ -112,6 +129,29 @@ function App() {
     setRdmp(null);
     setSamples([]);
     setRawData([]);
+    setStorageRoots([]);
+    setCurrentView('metadata');
+    setSelectedPendingIngest(null);
+    setSelectedSample(null);
+  }, []);
+
+  const handleSelectPendingIngest = useCallback((ingest: PendingIngest) => {
+    setSelectedPendingIngest(ingest);
+    setCurrentView('ingest-form');
+  }, []);
+
+  const handleIngestComplete = useCallback(() => {
+    setSelectedPendingIngest(null);
+    setCurrentView('ingest-inbox');
+    // Reload project data to get updated samples and raw data
+    if (selectedProjectId) {
+      loadProjectData(selectedProjectId);
+    }
+  }, [selectedProjectId]);
+
+  const handleIngestCancel = useCallback(() => {
+    setSelectedPendingIngest(null);
+    setCurrentView('ingest-inbox');
   }, []);
 
   // Show login if not authenticated
@@ -121,6 +161,51 @@ function App() {
 
   const selectedProject = projects.find((p) => p.id === selectedProjectId);
   const fields = rdmp?.rdmp_json.fields || [];
+
+  const renderContent = () => {
+    if (!selectedProject) {
+      return (
+        <div style={styles.placeholder}>
+          <p>Select a project to view its metadata</p>
+        </div>
+      );
+    }
+
+    if (currentView === 'ingest-form' && selectedPendingIngest) {
+      return (
+        <IngestForm
+          ingest={selectedPendingIngest}
+          fields={fields}
+          samples={samples}
+          storageRoots={storageRoots}
+          onComplete={handleIngestComplete}
+          onCancel={handleIngestCancel}
+        />
+      );
+    }
+
+    if (currentView === 'ingest-inbox') {
+      return (
+        <IngestInbox
+          project={selectedProject}
+          onSelectIngest={handleSelectPendingIngest}
+          storageRoots={storageRoots}
+        />
+      );
+    }
+
+    // Default: metadata view
+    return (
+      <MetadataTable
+        samples={samples}
+        fields={fields}
+        rawData={rawData}
+        loading={loadingData}
+        storageRoots={storageRoots}
+        onSelectSample={setSelectedSample}
+      />
+    );
+  };
 
   return (
     <div style={styles.app}>
@@ -150,21 +235,43 @@ function App() {
               )}
             </div>
 
-            <MetadataTable
-              samples={samples}
-              fields={fields}
-              rawData={rawData}
-              loading={loadingData}
-            />
+            {/* Navigation tabs */}
+            <div style={styles.tabs}>
+              <button
+                style={{
+                  ...styles.tab,
+                  ...(currentView === 'metadata' ? styles.tabActive : {}),
+                }}
+                onClick={() => setCurrentView('metadata')}
+              >
+                Metadata Table
+              </button>
+              <button
+                style={{
+                  ...styles.tab,
+                  ...(currentView === 'ingest-inbox' || currentView === 'ingest-form' ? styles.tabActive : {}),
+                }}
+                onClick={() => setCurrentView('ingest-inbox')}
+              >
+                Ingest Inbox
+              </button>
+            </div>
           </div>
         )}
 
-        {!selectedProjectId && (
-          <div style={styles.placeholder}>
-            <p>Select a project to view its metadata</p>
-          </div>
-        )}
+        {renderContent()}
       </main>
+
+      {/* Sample Detail Modal */}
+      {selectedSample && (
+        <SampleDetailModal
+          sample={selectedSample}
+          rawData={rawData}
+          fields={fields}
+          storageRoots={storageRoots}
+          onClose={() => setSelectedSample(null)}
+        />
+      )}
     </div>
   );
 }
@@ -211,6 +318,27 @@ const styles: Record<string, React.CSSProperties> = {
     height: '300px',
     color: '#9ca3af',
     fontSize: '16px',
+  },
+  tabs: {
+    display: 'flex',
+    gap: '4px',
+    borderBottom: '1px solid #e5e7eb',
+    marginBottom: '16px',
+  },
+  tab: {
+    padding: '10px 16px',
+    fontSize: '14px',
+    fontWeight: 500,
+    background: 'none',
+    border: 'none',
+    borderBottom: '2px solid transparent',
+    color: '#6b7280',
+    cursor: 'pointer',
+    transition: 'all 0.15s',
+  },
+  tabActive: {
+    color: '#2563eb',
+    borderBottomColor: '#2563eb',
   },
 };
 

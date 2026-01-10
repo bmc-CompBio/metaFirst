@@ -71,8 +71,8 @@ build/
 # Environment variables
 .env
 
-# Ingestion helper local config
-ingestion-helper/config.json
+# Ingest helper local config (contains credentials)
+ingest_helper/config.yaml
 
 # Queue data
 .rdm-ingestion/
@@ -80,3 +80,6 @@ ingestion-helper/config.json
 # Logs
 *.log
 logs/
+
+# Test cache
+.pytest_cache/
