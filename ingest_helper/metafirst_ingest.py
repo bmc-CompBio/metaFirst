@@ -14,6 +14,7 @@ import hashlib
 import platform
 import subprocess
 import webbrowser
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,13 @@ import yaml
 import httpx
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileCreatedEvent
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(levelname)s] %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 
 class SupervisorClient:
@@ -54,22 +62,25 @@ class SupervisorClient:
         endpoint: str,
         json: dict | None = None,
         params: dict | None = None,
+        retries: int = 0,
+        retry_delay: float = 1.0,
     ) -> dict[str, Any]:
-        """Make an authenticated request to the API."""
+        """Make an authenticated request to the API.
+
+        Args:
+            method: HTTP method
+            endpoint: API endpoint
+            json: JSON body (optional)
+            params: Query parameters (optional)
+            retries: Number of retries for 5xx errors (default 0)
+            retry_delay: Initial delay between retries in seconds (exponential backoff)
+        """
         headers = {"Authorization": f"Bearer {self._get_token()}"}
 
-        response = self._client.request(
-            method,
-            f"{self.base_url}{endpoint}",
-            headers=headers,
-            json=json,
-            params=params,
-        )
+        attempt = 0
+        max_attempts = retries + 1
 
-        # Handle token expiration
-        if response.status_code == 401:
-            self._token = None
-            headers = {"Authorization": f"Bearer {self._get_token()}"}
+        while attempt < max_attempts:
             response = self._client.request(
                 method,
                 f"{self.base_url}{endpoint}",
@@ -77,6 +88,31 @@ class SupervisorClient:
                 json=json,
                 params=params,
             )
+
+            # Handle token expiration
+            if response.status_code == 401:
+                self._token = None
+                headers = {"Authorization": f"Bearer {self._get_token()}"}
+                response = self._client.request(
+                    method,
+                    f"{self.base_url}{endpoint}",
+                    headers=headers,
+                    json=json,
+                    params=params,
+                )
+
+            # Retry on 5xx errors
+            if response.status_code >= 500 and attempt < max_attempts - 1:
+                delay = retry_delay * (2 ** attempt)
+                logger.warning(
+                    f"Server error {response.status_code} on {endpoint}, "
+                    f"retrying in {delay:.1f}s (attempt {attempt + 1}/{max_attempts})"
+                )
+                time.sleep(delay)
+                attempt += 1
+                continue
+
+            break
 
         if response.status_code >= 400:
             raise Exception(f"API error {response.status_code}: {response.text}")
@@ -169,6 +205,33 @@ class SupervisorClient:
     def close(self):
         """Close the HTTP client."""
         self._client.close()
+
+    def get_projects(self) -> list[dict]:
+        """Get list of projects the user has access to.
+
+        Returns:
+            List of project dicts with at least 'id' and 'name' fields.
+
+        Raises:
+            Exception: On API error (401, 5xx after retries, etc.)
+        """
+        return self._request("GET", "/api/projects", retries=3, retry_delay=1.0)
+
+    def get_storage_roots(self, project_id: int) -> list[dict]:
+        """Get storage roots for a project.
+
+        Args:
+            project_id: The project ID to get storage roots for.
+
+        Returns:
+            List of storage root dicts with at least 'id' and 'name' fields.
+
+        Raises:
+            Exception: On API error (401, 5xx after retries, etc.)
+        """
+        return self._request(
+            "GET", f"/api/projects/{project_id}/storage-roots", retries=3, retry_delay=1.0
+        )
 
 
 class WatcherConfig:
@@ -327,9 +390,196 @@ def load_config(config_path: str) -> dict:
         return yaml.safe_load(f)
 
 
+class ResolvedWatcherConfig:
+    """Result of resolving a watcher config with names to numeric IDs."""
+
+    def __init__(
+        self,
+        watch_path: str,
+        project_id: int,
+        storage_root_id: int,
+        project_name: str | None = None,
+        storage_root_name: str | None = None,
+        base_path_for_relative: str | None = None,
+        sample_identifier_pattern: str | None = None,
+        resolved_by_name: bool = False,
+    ):
+        self.watch_path = watch_path
+        self.project_id = project_id
+        self.storage_root_id = storage_root_id
+        self.project_name = project_name
+        self.storage_root_name = storage_root_name
+        self.base_path_for_relative = base_path_for_relative
+        self.sample_identifier_pattern = sample_identifier_pattern
+        self.resolved_by_name = resolved_by_name
+
+
+def resolve_watcher_config(
+    watcher_cfg: dict,
+    client: SupervisorClient,
+    projects_cache: dict[str, dict] | None = None,
+    storage_roots_cache: dict[int, list[dict]] | None = None,
+) -> tuple[ResolvedWatcherConfig | None, str | None]:
+    """Resolve a watcher config, converting project_name/storage_root_name to IDs.
+
+    Args:
+        watcher_cfg: Raw watcher config dict from YAML
+        client: SupervisorClient for API calls
+        projects_cache: Optional cache of projects by name (populated if None)
+        storage_roots_cache: Optional cache of storage roots by project_id
+
+    Returns:
+        Tuple of (ResolvedWatcherConfig, None) on success, or
+        (None, error_message) on failure.
+    """
+    watch_path = watcher_cfg.get("watch_path")
+    if not watch_path:
+        return None, "Missing 'watch_path'"
+
+    resolved_by_name = False
+    project_id: int | None = None
+    project_name: str | None = None
+    storage_root_id: int | None = None
+    storage_root_name: str | None = None
+
+    # --- Resolve project_id ---
+    if "project_id" in watcher_cfg and watcher_cfg["project_id"] is not None:
+        # Numeric ID takes precedence
+        project_id = int(watcher_cfg["project_id"])
+    elif "project_name" in watcher_cfg and watcher_cfg["project_name"]:
+        # Resolve by name
+        project_name = watcher_cfg["project_name"]
+
+        # Get projects (use cache or fetch)
+        try:
+            if projects_cache is None:
+                projects = client.get_projects()
+                projects_cache = {p["name"]: p for p in projects}
+            else:
+                projects = list(projects_cache.values())
+        except Exception as e:
+            error_msg = str(e)
+            if "401" in error_msg:
+                return None, f"Authentication failed while resolving project_name '{project_name}'"
+            return None, f"API error resolving project_name '{project_name}': {e}"
+
+        # Find matching projects by name
+        matches = [p for p in projects if p["name"] == project_name]
+
+        if len(matches) == 0:
+            return None, f"Project not found: '{project_name}'"
+        elif len(matches) > 1:
+            return None, f"Ambiguous project_name '{project_name}': found {len(matches)} matches"
+
+        project_id = matches[0]["id"]
+        resolved_by_name = True
+        logger.debug(f"Resolved project_name '{project_name}' -> project_id={project_id}")
+    else:
+        return None, "Missing both 'project_id' and 'project_name'"
+
+    # --- Resolve storage_root_id ---
+    if "storage_root_id" in watcher_cfg and watcher_cfg["storage_root_id"] is not None:
+        # Numeric ID takes precedence
+        storage_root_id = int(watcher_cfg["storage_root_id"])
+    elif "storage_root_name" in watcher_cfg and watcher_cfg["storage_root_name"]:
+        # Resolve by name
+        storage_root_name = watcher_cfg["storage_root_name"]
+
+        # Get storage roots for the resolved project
+        try:
+            if storage_roots_cache is None:
+                storage_roots_cache = {}
+            if project_id not in storage_roots_cache:
+                storage_roots_cache[project_id] = client.get_storage_roots(project_id)
+            storage_roots = storage_roots_cache[project_id]
+        except Exception as e:
+            error_msg = str(e)
+            if "401" in error_msg:
+                return None, f"Authentication failed while resolving storage_root_name '{storage_root_name}'"
+            return None, f"API error resolving storage_root_name '{storage_root_name}': {e}"
+
+        # Find matching storage roots by name
+        matches = [sr for sr in storage_roots if sr["name"] == storage_root_name]
+
+        if len(matches) == 0:
+            return None, f"Storage root not found: '{storage_root_name}' in project {project_id}"
+        elif len(matches) > 1:
+            return None, f"Ambiguous storage_root_name '{storage_root_name}': found {len(matches)} matches"
+
+        storage_root_id = matches[0]["id"]
+        resolved_by_name = True
+        logger.debug(
+            f"Resolved storage_root_name '{storage_root_name}' -> storage_root_id={storage_root_id}"
+        )
+    else:
+        return None, "Missing both 'storage_root_id' and 'storage_root_name'"
+
+    # Build resolved config
+    return ResolvedWatcherConfig(
+        watch_path=watch_path,
+        project_id=project_id,
+        storage_root_id=storage_root_id,
+        project_name=project_name,
+        storage_root_name=storage_root_name,
+        base_path_for_relative=watcher_cfg.get("base_path_for_relative"),
+        sample_identifier_pattern=watcher_cfg.get("sample_identifier_pattern"),
+        resolved_by_name=resolved_by_name,
+    ), None
+
+
+def resolve_all_watchers(
+    watchers_cfg: list[dict],
+    client: SupervisorClient,
+) -> tuple[list[ResolvedWatcherConfig], list[tuple[dict, str]]]:
+    """Resolve all watcher configs, converting names to IDs where needed.
+
+    Args:
+        watchers_cfg: List of raw watcher config dicts from YAML
+        client: SupervisorClient for API calls
+
+    Returns:
+        Tuple of:
+        - List of successfully resolved watcher configs
+        - List of (failed_config, error_message) tuples for skipped watchers
+    """
+    resolved = []
+    failed = []
+
+    # Cache for API responses to avoid repeated calls
+    projects_cache: dict[str, dict] | None = None
+    storage_roots_cache: dict[int, list[dict]] = {}
+
+    # Pre-fetch projects if any watcher uses project_name
+    if any("project_name" in w and w.get("project_name") for w in watchers_cfg):
+        try:
+            projects = client.get_projects()
+            projects_cache = {p["name"]: p for p in projects}
+        except Exception as e:
+            logger.error(f"Failed to fetch projects from API: {e}")
+            # All watchers with project_name will fail
+            projects_cache = {}
+
+    for watcher_cfg in watchers_cfg:
+        result, error = resolve_watcher_config(
+            watcher_cfg, client, projects_cache, storage_roots_cache
+        )
+        if result:
+            resolved.append(result)
+        else:
+            failed.append((watcher_cfg, error or "Unknown error"))
+
+    return resolved, failed
+
+
 def run_watcher(config_path: str):
     """Run the folder watcher based on configuration."""
     config = load_config(config_path)
+
+    # Print startup banner
+    print("=" * 60)
+    print("metaFirst Ingest Helper")
+    print("=" * 60)
+    print(f"Config file: {config_path}")
 
     # Initialize client
     client = SupervisorClient(
@@ -341,7 +591,7 @@ def run_watcher(config_path: str):
     # Test connection
     try:
         client._get_token()
-        print(f"[OK] Connected to supervisor at {config['supervisor_url']}")
+        print(f"Connected to supervisor at {config['supervisor_url']}")
     except Exception as e:
         print(f"[ERROR] Failed to connect: {e}")
         sys.exit(1)
@@ -350,20 +600,71 @@ def run_watcher(config_path: str):
     ui_base_url = config.get("ui_url", "http://localhost:5173")
     open_browser = config.get("open_browser", False)
 
-    print(f"[INFO] UI URL: {ui_base_url}")
-    print(f"[INFO] Auto-open browser: {open_browser}")
+    print(f"UI URL: {ui_base_url}")
+    print(f"Auto-open browser: {open_browser}")
+    print("-" * 60)
+
+    # Resolve watcher configs (convert names to IDs if needed)
+    watchers_cfg = config.get("watchers", [])
+    if not watchers_cfg:
+        print("[ERROR] No watchers configured")
+        sys.exit(1)
+
+    print(f"Resolving {len(watchers_cfg)} watcher configuration(s)...")
+
+    resolved_watchers, failed_watchers = resolve_all_watchers(watchers_cfg, client)
+
+    # Log any failed watchers
+    for failed_cfg, error_msg in failed_watchers:
+        watch_path = failed_cfg.get("watch_path", "<unknown>")
+        print(f"[SKIP] {watch_path}: {error_msg}")
+
+    # Exit if no valid watchers
+    if not resolved_watchers:
+        print("\n[ERROR] No valid watchers after resolution. Please fix configuration.")
+        sys.exit(1)
+
+    # Check if any resolution happened by name
+    any_resolved_by_name = any(w.resolved_by_name for w in resolved_watchers)
+
+    # Print resolved mappings banner
+    print("-" * 60)
+    print("Resolved watcher mappings:")
+    for resolved in resolved_watchers:
+        project_display = (
+            f"{resolved.project_name} (id={resolved.project_id})"
+            if resolved.project_name
+            else f"id={resolved.project_id}"
+        )
+        storage_display = (
+            f"{resolved.storage_root_name} (id={resolved.storage_root_id})"
+            if resolved.storage_root_name
+            else f"id={resolved.storage_root_id}"
+        )
+        print(f"  {resolved.watch_path}")
+        print(f"    -> project: {project_display}")
+        print(f"    -> storage_root: {storage_display}")
+
+    # Print caution note if names were resolved
+    if any_resolved_by_name:
+        print("-" * 60)
+        print("[NOTE] Resolved names to IDs at startup.")
+        print("       After database reseed, re-run helper if projects/storage roots change.")
+
+    print("=" * 60)
 
     # Set up observers for each watcher
     observer = Observer()
     handlers = []
+    active_watchers = 0
 
-    for watcher_cfg in config.get("watchers", []):
+    for resolved in resolved_watchers:
         watcher_config = WatcherConfig(
-            watch_path=watcher_cfg["watch_path"],
-            project_id=watcher_cfg["project_id"],
-            storage_root_id=watcher_cfg["storage_root_id"],
-            base_path_for_relative=watcher_cfg.get("base_path_for_relative"),
-            sample_identifier_pattern=watcher_cfg.get("sample_identifier_pattern"),
+            watch_path=resolved.watch_path,
+            project_id=resolved.project_id,
+            storage_root_id=resolved.storage_root_id,
+            base_path_for_relative=resolved.base_path_for_relative,
+            sample_identifier_pattern=resolved.sample_identifier_pattern,
         )
 
         handler = IngestEventHandler(
@@ -381,15 +682,17 @@ def run_watcher(config_path: str):
             continue
 
         observer.schedule(handler, str(watcher_config.watch_path), recursive=True)
-        print(
-            f"[WATCH] {watcher_config.watch_path} -> "
-            f"Project {watcher_config.project_id}, "
-            f"StorageRoot {watcher_config.storage_root_id}"
-        )
+        active_watchers += 1
+        print(f"[WATCH] {watcher_config.watch_path}")
+
+    if active_watchers == 0:
+        print("[ERROR] No valid watch paths found. All paths may not exist.")
+        client.close()
+        sys.exit(1)
 
     # Start observer
     observer.start()
-    print("\n[READY] Watching for new files. Press Ctrl+C to stop.\n")
+    print(f"\n[READY] Watching {active_watchers} folder(s) for new files. Press Ctrl+C to stop.\n")
 
     try:
         while True:
@@ -416,11 +719,17 @@ password: demo123
 compute_hash: false
 open_browser: true  # Open browser when new file detected
 watchers:
+  # Using numeric IDs (classic):
   - watch_path: /path/to/data/folder
     project_id: 1
     storage_root_id: 1
     base_path_for_relative: /path/to/data
     sample_identifier_pattern: "^([A-Z]+-\\d+)"
+
+  # Using names (resolved at startup):
+  - watch_path: /path/to/other/folder
+    project_name: "My Project"
+    storage_root_name: "LOCAL_DATA"
 """)
         sys.exit(1)
 

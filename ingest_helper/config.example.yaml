@@ -14,9 +14,20 @@ open_browser: true             # Auto-open browser when file detected
 compute_hash: false   # Whether to compute SHA256 hash for each file
 
 # Watched folders
-# Each watcher maps a local folder to a project and storage root
+# Each watcher maps a local folder to a project and storage root.
+#
+# You can specify projects/storage roots by:
+#   - Numeric ID: project_id / storage_root_id (classic, always works)
+#   - Name: project_name / storage_root_name (resolved at startup)
+#
+# If both ID and name are provided, the numeric ID takes precedence.
+# Names are resolved via the supervisor API at startup.
+
 watchers:
-  # Example 1: qPCR data folder
+  # -------------------------------------------------------------------------
+  # Example 1: Using numeric IDs (classic approach)
+  # -------------------------------------------------------------------------
+  # Use this when you know the exact IDs and they won't change.
   - watch_path: /Users/yourusername/data/qpcr
     project_id: 1
     storage_root_id: 1
@@ -26,13 +37,32 @@ watchers:
     # First capturing group is used as sample identifier
     sample_identifier_pattern: "^([A-Z]+-\\d+)"
 
-  # Example 2: RNA-seq data folder with different pattern
+  # -------------------------------------------------------------------------
+  # Example 2: Using names (recommended for portability)
+  # -------------------------------------------------------------------------
+  # Use this when you want config that survives database reseeds.
+  # Names are resolved to IDs at startup via the supervisor API.
   # - watch_path: /Users/yourusername/data/rnaseq
-  #   project_id: 2
-  #   storage_root_id: 2
+  #   project_name: "RNA-seq Demo Project"
+  #   storage_root_name: "LOCAL_DATA"
   #   sample_identifier_pattern: "^(RNA-\\d+)"
 
-  # Example 3: Microscopy data folder (auto-detect sample from parent folder name)
+  # -------------------------------------------------------------------------
+  # Example 3: Mixed approach
+  # -------------------------------------------------------------------------
+  # You can mix ID and name within the same watcher.
   # - watch_path: /Users/yourusername/data/microscopy
-  #   project_id: 3
-  #   storage_root_id: 3
+  #   project_name: "Microscopy Project"  # Resolved by name
+  #   storage_root_id: 5                   # Known numeric ID
+
+# -------------------------------------------------------------------------
+# Troubleshooting name resolution
+# -------------------------------------------------------------------------
+# If a watcher fails to resolve:
+#   1. Check that you have access to the project (are you a member?)
+#   2. Verify the exact name (case-sensitive) via the API:
+#      curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/projects
+#   3. For storage roots, list them for a specific project:
+#      curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/projects/1/storage-roots
+#
+# The helper will log skipped watchers with reasons at startup.
