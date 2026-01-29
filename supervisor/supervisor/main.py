@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from supervisor.config import get_settings
 from supervisor.api import auth, rdmp, projects, samples, storage
+from supervisor.discovery import api as discovery_api
 from supervisor.database import Base, engine
 
 settings = get_settings()
@@ -34,6 +35,7 @@ app.include_router(rdmp.router, prefix="/api/rdmp", tags=["rdmp"])
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(samples.router, prefix="/api", tags=["samples"])
 app.include_router(storage.router, prefix="/api", tags=["storage"])
+app.include_router(discovery_api.router, prefix="/api/discovery", tags=["discovery"])
 
 
 @app.get("/health")
