@@ -91,6 +91,9 @@ To use a different database location, set `DATABASE_URL`:
 DATABASE_URL=sqlite:///path/to/my.db uvicorn supervisor.main:app --reload --port 8000
 ```
 
+**Re-seeding demo data**
+Running `./scripts/install_supervisor.sh --seed` on an existing database will **delete and recreate** the database. This is a destructive reset that removes all local data. Stop uvicorn before reseeding.
+
 **Multiple database files / wrong database used**
 Older versions used a relative path that created `supervisor.db` in whichever directory you ran uvicorn from. The current version uses an absolute path to `supervisor/supervisor.db` regardless of working directory. If you have a stale `./supervisor.db` in the repo root, delete it:
 ```bash

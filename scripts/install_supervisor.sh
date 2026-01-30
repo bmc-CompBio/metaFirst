@@ -219,8 +219,12 @@ fi
 
 # Determine whether to seed
 DO_SEED=false
+DO_RESEED=false
 if [[ "$SEED_DATA" == "yes" ]]; then
     DO_SEED=true
+    if [[ "$DB_EXISTS" == "true" ]]; then
+        DO_RESEED=true
+    fi
 elif [[ "$SEED_DATA" == "no" ]]; then
     DO_SEED=false
 elif [[ "$SEED_DATA" == "auto" ]]; then
@@ -228,15 +232,37 @@ elif [[ "$SEED_DATA" == "auto" ]]; then
         DO_SEED=true
     elif [[ "$NON_INTERACTIVE" == "false" ]]; then
         echo ""
-        read -p "Database exists. Re-seed demo data? (y/N): " response
+        echo "WARNING: Re-seeding will DELETE the existing database and recreate it."
+        echo "         All local data (projects, samples, users) will be lost."
+        read -p "Delete database and re-seed demo data? (y/N): " response
         if [[ "$response" =~ ^[Yy]$ ]]; then
             DO_SEED=true
+            DO_RESEED=true
         fi
     fi
 fi
 
 if [[ "$DO_SEED" == "true" ]]; then
     echo ""
+
+    # If reseeding, delete existing DB first
+    if [[ "$DO_RESEED" == "true" ]]; then
+        # Check for running uvicorn using the DB
+        if pgrep -f "uvicorn.*supervisor" > /dev/null 2>&1; then
+            echo "WARNING: uvicorn appears to be running. Stop it before reseeding:"
+            echo "         pkill -f 'uvicorn.*supervisor'"
+            echo ""
+            read -p "Continue anyway? (y/N): " response
+            if [[ ! "$response" =~ ^[Yy]$ ]]; then
+                echo "Aborted. Stop uvicorn and run again."
+                exit 1
+            fi
+        fi
+
+        echo "Deleting existing database: $DB_PATH"
+        rm -f "$DB_PATH"
+    fi
+
     echo "Seeding demo data..."
     python "$REPO_ROOT/demo/seed.py"
     echo "Demo data seeded."
