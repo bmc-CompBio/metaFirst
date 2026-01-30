@@ -244,10 +244,86 @@ else
     echo "Skipping demo data seeding."
 fi
 
+# -----------------------------------------------------------------------------
+# Post-install verification
+# -----------------------------------------------------------------------------
+
+echo ""
+echo "Verifying installation..."
+
+# Check the DB file exists and has users
+if [[ -f "$DB_PATH" ]]; then
+    USER_COUNT=$(python -c "
+from supervisor.database import SessionLocal
+from supervisor.models.user import User
+db = SessionLocal()
+print(db.query(User).count())
+db.close()
+" 2>/dev/null || echo "0")
+
+    if [[ "$USER_COUNT" -gt 0 ]]; then
+        echo "✓ Database: $DB_PATH ($USER_COUNT users)"
+    else
+        echo "⚠ Database exists but has no users. Run with --seed to add demo data."
+    fi
+else
+    echo "⚠ Database not found at $DB_PATH"
+    echo "  Run with --seed to create and seed the database."
+fi
+
+# Quick startup test (if not in CI and user wants it)
+VERIFY_LOGIN=false
+if [[ "$NON_INTERACTIVE" == "false" ]] && [[ "$DO_SEED" == "true" ]]; then
+    echo ""
+    read -p "Run quick login verification? (Y/n): " response
+    if [[ ! "$response" =~ ^[Nn]$ ]]; then
+        VERIFY_LOGIN=true
+    fi
+fi
+
+if [[ "$VERIFY_LOGIN" == "true" ]]; then
+    echo ""
+    echo "Starting temporary server for verification..."
+
+    # Start uvicorn in background
+    cd "$REPO_ROOT/supervisor"
+    uvicorn supervisor.main:app --port 8765 &>/dev/null &
+    UVICORN_PID=$!
+    cd "$REPO_ROOT"
+
+    # Wait for server to start
+    sleep 2
+
+    # Test login
+    LOGIN_RESULT=$(curl -s -X POST http://127.0.0.1:8765/api/auth/login \
+        -H "Content-Type: application/x-www-form-urlencoded" \
+        -d "username=alice&password=demo123" 2>/dev/null || echo "FAILED")
+
+    # Kill the server
+    kill $UVICORN_PID 2>/dev/null || true
+    wait $UVICORN_PID 2>/dev/null || true
+
+    if echo "$LOGIN_RESULT" | grep -q "access_token"; then
+        echo "✓ Login verification passed (alice/demo123)"
+    else
+        echo "✗ Login verification FAILED"
+        echo "  Response: $LOGIN_RESULT"
+        echo ""
+        echo "  Diagnostics:"
+        echo "    DB path: $DB_PATH"
+        echo "    DB exists: $(test -f "$DB_PATH" && echo "yes" || echo "no")"
+        echo "    Users in DB: $USER_COUNT"
+        echo ""
+        echo "  Try: rm $DB_PATH && ./scripts/install_supervisor.sh --seed"
+    fi
+fi
+
 echo ""
 echo "=============================================="
 echo "Supervisor installation complete!"
 echo "=============================================="
+echo ""
+echo "Database: $DB_PATH"
 echo ""
 echo "To start the backend API:"
 echo "  cd $REPO_ROOT/supervisor"
@@ -275,3 +351,5 @@ fi
 
 echo ""
 echo "Demo users: alice, bob, carol, david, eve (password: demo123)"
+echo ""
+echo "To override database location: DATABASE_URL=sqlite:///path/to/db.sqlite uvicorn ..."

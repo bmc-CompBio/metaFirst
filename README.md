@@ -24,7 +24,7 @@ Install scripts automate setup on macOS/Linux. Run from the repository root.
 ./scripts/install_supervisor.sh
 ```
 
-Sets up Python venv, installs dependencies, and seeds demo data if the database is missing. Prints commands to start the backend API and web UI.
+Sets up Python venv, installs dependencies, and seeds demo data if the database is missing. The database is created at `supervisor/supervisor.db`. Prints commands to start the backend API and web UI.
 
 Requirements: Python 3.11+, Node.js 18+ (for web UI)
 
@@ -77,6 +77,23 @@ uvicorn supervisor.main:app --reload --host 0.0.0.0 --port 8000
 Fixed in latest version. Pull the latest code and reinstall:
 ```bash
 git pull && ./scripts/install_user.sh
+```
+
+**Login fails with 401 after installation**
+The database lives at `supervisor/supervisor.db`. If login fails:
+1. Check the DB exists: `ls -la supervisor/supervisor.db`
+2. Verify users were seeded: run `./scripts/install_supervisor.sh --seed`
+3. Start uvicorn from the `supervisor/` directory (the default)
+
+To use a different database location, set `DATABASE_URL`:
+```bash
+DATABASE_URL=sqlite:///path/to/my.db uvicorn supervisor.main:app --reload --port 8000
+```
+
+**Multiple database files / wrong database used**
+Older versions used a relative path that created `supervisor.db` in whichever directory you ran uvicorn from. The current version uses an absolute path to `supervisor/supervisor.db` regardless of working directory. If you have a stale `./supervisor.db` in the repo root, delete it:
+```bash
+rm -f ./supervisor.db  # Remove stale DB at repo root (if any)
 ```
 
 ## Documentation
