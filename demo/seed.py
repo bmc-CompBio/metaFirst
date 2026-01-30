@@ -3,7 +3,7 @@
 Creates:
 - 5 users (alice, bob, carol, david, eve)
 - 4 RDMP templates (qPCR, RNA-seq, microscopy, clinical)
-- 3 projects with 4 different RDMPs
+- 3 projects with RDMPs and storage roots (LOCAL_DATA)
 - Sample data with field values
 - Demonstrates: multi-project stewards, missing fields, role permissions
 """
@@ -22,6 +22,7 @@ from supervisor.models.project import Project
 from supervisor.models.membership import Membership
 from supervisor.models.rdmp import RDMPTemplate, RDMPTemplateVersion, RDMPVersion
 from supervisor.models.sample import Sample, SampleFieldValue
+from supervisor.models.storage import StorageRoot
 from supervisor.utils.security import hash_password
 
 
@@ -125,6 +126,15 @@ def seed_database():
         db.add(Membership(project_id=project1.id, user_id=users[2].id, role_name="researcher", created_by=users[0].id))
         print("    Members: Alice (PI), Bob (researcher), Carol (researcher)")
 
+        # Storage root for project 1
+        storage_root1 = StorageRoot(
+            project_id=project1.id,
+            name="LOCAL_DATA",
+            description="Local folders on user machines",
+        )
+        db.add(storage_root1)
+        print("    Storage root: LOCAL_DATA")
+
         # Project 2: Transcriptomics Analysis (RNA-seq) - Carol PI, David researcher, Eve steward
         print("\n  Project 2: Transcriptomics Analysis (RNA-seq)")
         project2 = Project(
@@ -155,6 +165,15 @@ def seed_database():
         db.add(Membership(project_id=project2.id, user_id=users[4].id, role_name="steward", created_by=users[2].id))
         print("    Members: Carol (PI), David (researcher), Eve (steward)")
 
+        # Storage root for project 2
+        storage_root2 = StorageRoot(
+            project_id=project2.id,
+            name="LOCAL_DATA",
+            description="Local folders on user machines",
+        )
+        db.add(storage_root2)
+        print("    Storage root: LOCAL_DATA")
+
         # Project 3: Cellular Imaging Core (Microscopy) - Eve steward, Alice researcher
         print("\n  Project 3: Cellular Imaging Core (Microscopy)")
         project3 = Project(
@@ -183,6 +202,15 @@ def seed_database():
         db.add(Membership(project_id=project3.id, user_id=users[4].id, role_name="steward", created_by=users[4].id))
         db.add(Membership(project_id=project3.id, user_id=users[0].id, role_name="researcher", created_by=users[4].id))
         print("    Members: Eve (steward), Alice (researcher)")
+
+        # Storage root for project 3
+        storage_root3 = StorageRoot(
+            project_id=project3.id,
+            name="LOCAL_DATA",
+            description="Local folders on user machines",
+        )
+        db.add(storage_root3)
+        print("    Storage root: LOCAL_DATA")
 
         db.flush()
 
@@ -324,7 +352,7 @@ def seed_database():
         print(f"  - RNA-seq Standard")
         print(f"  - Microscopy Standard")
         print(f"  - Clinical Samples")
-        print(f"\nProjects: 3")
+        print(f"\nProjects: 3 (each with storage root: LOCAL_DATA)")
         print(f"  - Gene Expression Study 2024 (qPCR)")
         print(f"  - Transcriptomics Analysis (RNA-seq)")
         print(f"  - Cellular Imaging Core (Microscopy)")

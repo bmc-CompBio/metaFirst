@@ -266,6 +266,7 @@ if [[ "$DO_SEED" == "true" ]]; then
     echo "Seeding demo data..."
     python "$REPO_ROOT/demo/seed.py"
     echo "Demo data seeded."
+    echo "  Each demo project includes storage root: LOCAL_DATA"
 else
     echo "Skipping demo data seeding."
 fi
@@ -398,5 +399,8 @@ echo "UI will be available at: http://localhost:5173 (or http://<HOSTNAME>:5173 
 
 echo ""
 echo "Demo users: alice, bob, carol, david, eve (password: demo123)"
+echo ""
+echo "Ingest helper: Your watcher config must reference an existing project"
+echo "storage root (e.g., storage_root_name: LOCAL_DATA). Demo projects include this."
 echo ""
 echo "To override database location: DATABASE_URL=sqlite:///path/to/db.sqlite uvicorn ..."

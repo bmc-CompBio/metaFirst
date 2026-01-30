@@ -82,6 +82,21 @@ Or use the helper script:
 
 Set `VITE_ALLOWED_HOSTS` to the hostname/IP clients use to connect. Without it, Vite blocks requests with "host not allowed". Ensure port 5173 is reachable (firewall/network).
 
+## Storage Roots
+
+Storage roots are defined per project and represent logical storage locations (e.g., a shared drive, local folder). Ingest watchers reference a storage root by name (preferred) or ID.
+
+Demo seeding creates a `LOCAL_DATA` storage root for each project. For real deployments, create storage roots via the API:
+```bash
+# List storage roots for a project
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/projects/1/storage-roots/
+
+# Create a new storage root
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name": "LAB_NAS", "description": "Lab network storage"}' \
+  http://localhost:8000/api/projects/1/storage-roots/
+```
+
 ## Common Issues
 
 **Python too old**
