@@ -61,6 +61,27 @@ The `--host 0.0.0.0` flag allows access from other machines (required for ingest
 - Web UI: http://localhost:5173
 - Demo users: alice, bob, carol, david, eve (password: `demo123`)
 
+## Web UI (local vs remote)
+
+**Local development** (same machine):
+```bash
+cd supervisor-ui && npm install && npm run dev
+```
+
+**Remote access** (other machines connect to the UI):
+```bash
+cd supervisor-ui && npm install
+export VITE_ALLOWED_HOSTS="<HOSTNAME_OR_IP>"
+npm run dev -- --host 0.0.0.0 --port 5173
+```
+
+Or use the helper script:
+```bash
+./scripts/start_ui_remote.sh <HOSTNAME_OR_IP>
+```
+
+Set `VITE_ALLOWED_HOSTS` to the hostname/IP clients use to connect. Without it, Vite blocks requests with "host not allowed". Ensure port 5173 is reachable (firewall/network).
+
 ## Common Issues
 
 **Python too old**

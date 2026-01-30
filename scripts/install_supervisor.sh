@@ -372,21 +372,29 @@ if [[ "$(uname)" == "Darwin" ]] || [[ "$(uname)" == "Linux" ]]; then
     echo "Note: You may need to allow incoming connections on port 8000 in your firewall."
 fi
 
-if [[ "$NODE_AVAILABLE" == "true" ]]; then
+echo ""
+echo "To start the web UI (in a new terminal):"
+if [[ "$NODE_AVAILABLE" != "true" ]]; then
     echo ""
-    echo "To start the web UI (in a new terminal):"
-    echo "  cd $REPO_ROOT/supervisor-ui"
-    echo "  npm install"
-    echo "  npm run dev"
-    echo ""
-    echo "UI will be available at: http://localhost:5173"
-else
-    echo ""
-    echo "To start the web UI, first install Node.js 18+, then:"
-    echo "  cd $REPO_ROOT/supervisor-ui"
-    echo "  npm install"
-    echo "  npm run dev"
+    echo "  First install Node.js 18+:"
+    echo "    macOS (Homebrew): brew install node"
+    echo "    Or use nvm: https://github.com/nvm-sh/nvm"
 fi
+echo ""
+echo "  Local-only (same machine):"
+echo "    cd $REPO_ROOT/supervisor-ui"
+echo "    npm install"
+echo "    npm run dev"
+echo ""
+echo "  Network-accessible (other machines can connect):"
+echo "    cd $REPO_ROOT/supervisor-ui"
+echo "    npm install"
+echo "    export VITE_ALLOWED_HOSTS=\"<SUPERVISOR_HOSTNAME_OR_IP>\""
+echo "    npm run dev -- --host 0.0.0.0 --port 5173"
+echo ""
+echo "  Set VITE_ALLOWED_HOSTS to the hostname clients will use, otherwise Vite blocks the request."
+echo ""
+echo "UI will be available at: http://localhost:5173 (or http://<HOSTNAME>:5173 for remote)"
 
 echo ""
 echo "Demo users: alice, bob, carol, david, eve (password: demo123)"
