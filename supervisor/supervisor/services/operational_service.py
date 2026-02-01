@@ -17,6 +17,7 @@ from supervisor.operational import (
     OperationalDBError,
 )
 from supervisor.operational.models import RunStatus, HeartbeatStatus
+from supervisor.models.rdmp import RDMPVersion, RDMPStatus, IngestRunRecord
 
 
 class OperationalService:
@@ -40,18 +41,28 @@ class OperationalService:
         project_id: int,
         triggered_by: str = "api",
         ingestor_id: Optional[str] = None,
-    ) -> IngestRun:
-        """Create a new ingest run record.
+        user_id: Optional[int] = None,
+    ) -> dict:
+        """Create a new ingest run record with RDMP provenance.
 
         Args:
             supervisor_id: The supervisor owning the operational DB
             project_id: The project being ingested
             triggered_by: How the run was triggered (watcher, manual, api)
             ingestor_id: Optional identifier of the ingestor instance
+            user_id: Optional user ID who triggered the run
 
         Returns:
-            The created IngestRun record
+            The created IngestRun info as dict
         """
+        # Find the active RDMP for this project (in central DB)
+        active_rdmp = self.central_db.query(RDMPVersion).filter(
+            RDMPVersion.project_id == project_id,
+            RDMPVersion.status == RDMPStatus.ACTIVE,
+        ).first()
+        rdmp_version_id = active_rdmp.id if active_rdmp else None
+
+        # Create the operational run in per-supervisor DB
         with operational_session_scope(supervisor_id, self.central_db) as ops_session:
             run = IngestRun(
                 project_id=project_id,
@@ -61,14 +72,25 @@ class OperationalService:
             )
             ops_session.add(run)
             ops_session.flush()
-            # Refresh to get the ID
             ops_session.refresh(run)
             run_id = run.id
             run_project_id = run.project_id
             run_status = run.status
 
+        # Record provenance in central DB (links to RDMP at time of run)
+        ingest_record = IngestRunRecord(
+            project_id=project_id,
+            ops_run_id=run_id,
+            rdmp_version_id=rdmp_version_id,
+            created_by=user_id,
+        )
+        self.central_db.add(ingest_record)
+        self.central_db.commit()
+
         # Return a detached summary (the session is closed)
-        return self._make_run_dict(run_id, run_project_id, run_status)
+        result = self._make_run_dict(run_id, run_project_id, run_status)
+        result["rdmp_version_id"] = rdmp_version_id
+        return result
 
     def update_ingest_run(
         self,

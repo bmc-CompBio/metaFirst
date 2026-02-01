@@ -54,6 +54,7 @@ class IngestRunResponse(BaseModel):
     finished_at: str | None = None
     triggered_by: str | None = None
     ingestor_id: str | None = None
+    rdmp_version_id: int | None = None
 
 
 class HeartbeatCreate(BaseModel):
@@ -144,6 +145,7 @@ def create_ingest_run(
             project_id=project_id,
             triggered_by=run_data.triggered_by,
             ingestor_id=run_data.ingestor_id,
+            user_id=current_user.id,
         )
         return run
     except Exception as e:
