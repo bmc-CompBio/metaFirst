@@ -176,6 +176,7 @@ All functionality is exposed via REST APIs:
 |--------|---------|----------|
 | Supervisor | Tenant/organization unit | Central |
 | SupervisorMembership | Links users to supervisors with roles | Central |
+| IngestRunRecord | Ingest run provenance with RDMP link | Central |
 | IngestRun | Record of ingest operations | Per-supervisor |
 | Heartbeat | Ingestor health status | Per-supervisor |
 
@@ -219,6 +220,55 @@ require_any_supervisor_role(db, user, supervisor_id)
 
 # Check user has specific roles
 require_supervisor_role(db, user, supervisor_id, [SupervisorRole.PI, SupervisorRole.STEWARD])
+```
+
+## Project-Only RDMPs (v0.2+)
+
+RDMPs (Research Data Management Plans) are attached to projects and define the data governance rules.
+
+### RDMP Status Workflow
+
+Each RDMP has a status that follows this lifecycle:
+
+```
+DRAFT → ACTIVE → SUPERSEDED
+```
+
+- **DRAFT**: Initial state. Can be edited by STEWARD or PI.
+- **ACTIVE**: Live RDMP for the project. Only one ACTIVE per project.
+- **SUPERSEDED**: Previous ACTIVE that was replaced by a new activation.
+
+### Role Requirements
+
+| Action | Required Role |
+|--------|---------------|
+| Create RDMP draft | STEWARD or PI |
+| Update RDMP draft | STEWARD or PI |
+| Activate RDMP | **PI only** |
+
+### Activation Rules
+
+1. Only DRAFT RDMPs can be activated
+2. When a new RDMP is activated, the previous ACTIVE becomes SUPERSEDED
+3. Only one ACTIVE RDMP per project at any time
+4. PI approval is recorded (`approved_by` field)
+
+### Ingest Run Provenance
+
+When an ingest run is created, the system records which RDMP was active at that time:
+- `IngestRunRecord` in central DB links `rdmp_version_id` to the run
+- If no RDMP is active, `rdmp_version_id` is null
+- This provides an audit trail of which data governance rules applied to each ingest
+
+### API Endpoints
+
+```
+POST   /api/projects/{id}/rdmps        # Create RDMP draft
+GET    /api/projects/{id}/rdmps        # List project RDMPs
+GET    /api/projects/{id}/rdmps/active # Get active RDMP
+GET    /api/rdmps/{id}                 # Get specific RDMP
+PATCH  /api/rdmps/{id}                 # Update draft
+POST   /api/rdmps/{id}/activate        # Activate (PI only)
 ```
 
 ## Database Architecture (v0.2+)
