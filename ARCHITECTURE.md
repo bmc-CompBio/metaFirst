@@ -35,13 +35,16 @@ The central backend service (FastAPI + SQLite).
 
 ### Supervisor UI
 
-A React + Vite frontend for metadata viewing and entry.
+A React + Vite frontend for project management and metadata entry.
 
 **Capabilities:**
-- Project selection and sample table view
-- RDMP-driven dynamic columns
-- Completeness indicators for required fields
-- Pending ingest form for browser-based metadata entry
+- Projects Overview: Dashboard of all accessible projects with RDMP status
+- Create Project Wizard: Multi-step project creation with RDMP setup
+- Project Settings: View/edit project configuration
+- RDMP Management: View versions, activate drafts (PI only)
+- Sample Table: RDMP-driven dynamic columns with completeness indicators
+- Pending Ingest: Browser-based metadata entry with sample ID detection
+- Member Management: Add/remove supervisor members, change roles (PI only)
 
 ### User Machines and Ingest Helper
 
@@ -149,11 +152,14 @@ All functionality is exposed via REST APIs:
 | Entity | Purpose |
 |--------|---------|
 | User | Authentication and identity |
-| Project | Container for samples, RDMPs, and memberships |
-| Membership | Links users to projects with roles |
+| Supervisor | Organizational unit (lab, research group) |
+| SupervisorMembership | Links users to supervisors with roles (PI/STEWARD/RESEARCHER) |
+| Project | Container for samples and RDMPs; belongs to a supervisor |
 | RDMPVersion | Versioned RDMP definitions per project |
 | Sample | Individual sample records within a project |
 | SampleFieldValue | EAV-style field values for samples |
+
+**Note:** Legacy `Membership` (project-level) is deprecated. Authorization is now supervisor-scoped via `SupervisorMembership`.
 
 ### Storage Entities
 
@@ -361,15 +367,20 @@ metaFirst/
 ### Implemented
 
 - JWT authentication and authorization
-- Project, membership, and RDMP management
-- Sample and field value CRUD with validation
+- Supervisor-scoped authorization (PI, STEWARD, RESEARCHER roles)
+- Project management with supervisor-scoped visibility
+- RDMP lifecycle (DRAFT → ACTIVE → SUPERSEDED) with PI approval
+- Sample and field value CRUD with RDMP validation
+- Paginated samples API with eager loading
 - Storage roots, mappings, and raw data references
 - Path change tracking with audit
 - Ingest helper with browser-based metadata entry
-- Metadata viewer UI
+- Sample ID extraction rules with detection panel
+- Create Project wizard with RDMP setup
+- Project Settings and RDMP Management UI
+- Supervisor member management UI
+- Projects Overview dashboard
 - Federated discovery index (API-only)
-- Supervisor-scoped roles (PI, STEWARD, RESEARCHER)
-- Primary steward designation per supervisor
 - Per-supervisor operational databases (ingest runs, heartbeats)
 
 ### Planned
@@ -377,3 +388,4 @@ metaFirst/
 - Release management (immutable snapshots)
 - Release corrections (linked new releases)
 - Discovery web UI
+- Bulk sample operations

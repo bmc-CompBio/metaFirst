@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiClient } from '../api/client';
-import type { PendingIngest, RDMPField, Sample, StorageRoot, RDMP } from '../types';
+import type { PendingIngest, RDMPField, Sample, StorageRoot, RDMP, RDMPVersion } from '../types';
 
 interface IngestPageProps {
   onProjectLoaded?: (projectId: number) => void;
@@ -16,6 +16,7 @@ export function IngestPage({ onProjectLoaded, onIngestComplete }: IngestPageProp
   const [error, setError] = useState<string | null>(null);
   const [ingest, setIngest] = useState<PendingIngest | null>(null);
   const [rdmp, setRdmp] = useState<RDMP | null>(null);
+  const [activeRDMP, setActiveRDMP] = useState<RDMPVersion | null>(null);
   const [samples, setSamples] = useState<Sample[]>([]);
   const [storageRoots, setStorageRoots] = useState<StorageRoot[]>([]);
 
@@ -44,10 +45,11 @@ export function IngestPage({ onProjectLoaded, onIngestComplete }: IngestPageProp
         const pendingIngest = await apiClient.getPendingIngest(Number(pendingId));
         setIngest(pendingIngest);
 
-        // Set initial form state based on inferred sample identifier
-        if (pendingIngest.inferred_sample_identifier) {
+        // Set initial form state based on detected or inferred sample identifier
+        const initialId = pendingIngest.detected_sample_id || pendingIngest.inferred_sample_identifier;
+        if (initialId) {
           setSampleOption('new');
-          setNewSampleIdentifier(pendingIngest.inferred_sample_identifier);
+          setNewSampleIdentifier(initialId);
         } else {
           setSampleOption('existing');
         }
@@ -58,14 +60,16 @@ export function IngestPage({ onProjectLoaded, onIngestComplete }: IngestPageProp
         }
 
         // Fetch project-scoped data
-        const [rdmpData, samplesData, storageRootsData] = await Promise.all([
+        const [rdmpData, activeRdmpData, samplesResponse, storageRootsData] = await Promise.all([
           apiClient.getProjectRDMP(pendingIngest.project_id).catch(() => null),
+          apiClient.getActiveRDMP(pendingIngest.project_id).catch(() => null),
           apiClient.getSamples(pendingIngest.project_id),
           apiClient.getStorageRoots(pendingIngest.project_id),
         ]);
 
         setRdmp(rdmpData);
-        setSamples(samplesData);
+        setActiveRDMP(activeRdmpData);
+        setSamples(samplesResponse.items);
         setStorageRoots(storageRootsData);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to load pending ingest');
@@ -236,6 +240,32 @@ export function IngestPage({ onProjectLoaded, onIngestComplete }: IngestPageProp
     );
   }
 
+  // Check if project has an active RDMP
+  if (!activeRDMP) {
+    return (
+      <div style={styles.pageContainer}>
+        <div style={styles.blockedContainer}>
+          <div style={styles.blockedIcon}>&#9888;</div>
+          <h2 style={styles.blockedTitle}>Ingestion Blocked</h2>
+          <p style={styles.blockedText}>
+            This project has no active RDMP. An RDMP must be activated before data can be ingested.
+          </p>
+          {ingest.project_name && (
+            <p style={styles.blockedProject}>Project: {ingest.project_name}</p>
+          )}
+          <div style={styles.blockedActions}>
+            <button onClick={handleBack} style={styles.cancelButton}>
+              Back to Inbox
+            </button>
+            <button onClick={() => navigate('/rdmps')} style={styles.submitButton}>
+              Go to RDMPs
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={styles.pageContainer}>
       <div style={styles.container}>
@@ -273,6 +303,37 @@ export function IngestPage({ onProjectLoaded, onIngestComplete }: IngestPageProp
               <span style={styles.hash}>{ingest.file_hash_sha256.substring(0, 16)}...</span>
             </div>
           )}
+        </div>
+
+        {/* Sample ID Detection Panel */}
+        <div style={styles.detectionPanel}>
+          <h4 style={styles.detectionTitle}>Detected Identifiers</h4>
+          <div style={styles.detectionContent}>
+            <div style={styles.detectionRow}>
+              <span style={styles.detectionLabel}>Detected Sample ID:</span>
+              <span style={ingest.detected_sample_id ? styles.detectedId : styles.noDetection}>
+                {ingest.detected_sample_id || 'None'}
+              </span>
+            </div>
+            <div style={styles.detectionRow}>
+              <span style={styles.detectionLabel}>Rule:</span>
+              <span style={styles.detectionValue}>
+                {ingest.detection_info?.configured
+                  ? `Filename regex: ${ingest.detection_info.regex || '(not set)'}`
+                  : 'No rule configured'}
+              </span>
+            </div>
+            {ingest.detection_info?.configured && (
+              <div style={styles.detectionRow}>
+                <span style={styles.detectionLabel}>Example:</span>
+                <span style={styles.detectionExample}>
+                  {ingest.detection_info.example_filename}
+                  {' → '}
+                  {ingest.detection_info.example_result || 'no match'}
+                </span>
+              </div>
+            )}
+          </div>
         </div>
 
         <form onSubmit={handleSubmit}>
@@ -474,6 +535,47 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '12px',
     color: '#6b7280',
   },
+  detectionPanel: {
+    padding: '12px 16px',
+    background: '#f0fdf4',
+    borderBottom: '1px solid #bbf7d0',
+  },
+  detectionTitle: {
+    fontSize: '13px',
+    fontWeight: 600,
+    color: '#166534',
+    margin: '0 0 8px 0',
+  },
+  detectionContent: {
+    fontSize: '13px',
+  },
+  detectionRow: {
+    display: 'flex',
+    gap: '8px',
+    marginBottom: '4px',
+  },
+  detectionLabel: {
+    color: '#6b7280',
+    minWidth: '130px',
+  },
+  detectionValue: {
+    color: '#374151',
+    fontFamily: 'monospace',
+    fontSize: '12px',
+  },
+  detectedId: {
+    color: '#166534',
+    fontWeight: 600,
+  },
+  noDetection: {
+    color: '#9ca3af',
+    fontStyle: 'italic',
+  },
+  detectionExample: {
+    color: '#6b7280',
+    fontFamily: 'monospace',
+    fontSize: '12px',
+  },
   section: {
     padding: '16px',
     borderBottom: '1px solid #e5e7eb',
@@ -562,5 +664,42 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '6px',
     color: '#fff',
     cursor: 'pointer',
+  },
+  blockedContainer: {
+    background: '#fff',
+    borderRadius: '8px',
+    border: '1px solid #fecaca',
+    maxWidth: '500px',
+    margin: '0 auto',
+    padding: '40px',
+    textAlign: 'center',
+  },
+  blockedIcon: {
+    fontSize: '48px',
+    color: '#dc2626',
+    marginBottom: '16px',
+  },
+  blockedTitle: {
+    fontSize: '20px',
+    fontWeight: 600,
+    color: '#991b1b',
+    margin: '0 0 12px 0',
+  },
+  blockedText: {
+    fontSize: '14px',
+    color: '#6b7280',
+    marginBottom: '16px',
+    lineHeight: 1.5,
+  },
+  blockedProject: {
+    fontSize: '14px',
+    fontWeight: 500,
+    color: '#374151',
+    marginBottom: '24px',
+  },
+  blockedActions: {
+    display: 'flex',
+    justifyContent: 'center',
+    gap: '12px',
   },
 };

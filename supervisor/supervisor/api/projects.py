@@ -17,7 +17,13 @@ from supervisor.schemas.project import (
     MembershipCreate,
     MembershipUpdate,
 )
-from supervisor.api.deps import get_current_active_user, require_supervisor_role
+from supervisor.api.deps import (
+    get_current_active_user,
+    require_supervisor_role,
+    require_any_supervisor_role,
+    require_project_access,
+    get_user_supervisor_ids,
+)
 from supervisor.models.supervisor_membership import SupervisorRole
 from supervisor.services.permission_service import check_permission
 
@@ -31,12 +37,22 @@ def list_projects(
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_active_user)]
 ):
-    """List projects where user is a member."""
-    # Get projects through memberships
-    memberships = db.query(Membership).filter(Membership.user_id == current_user.id).all()
-    project_ids = [m.project_id for m in memberships]
+    """List projects where user has supervisor membership."""
+    # Get supervisor IDs the user is a member of
+    supervisor_ids = get_user_supervisor_ids(db, current_user.id)
 
-    projects = db.query(Project).filter(Project.id.in_(project_ids), Project.is_active == True).all()
+    if not supervisor_ids:
+        return []
+
+    # Get all active projects for those supervisors
+    projects = (
+        db.query(Project)
+        .filter(
+            Project.supervisor_id.in_(supervisor_ids),
+            Project.is_active == True
+        )
+        .all()
+    )
     return projects
 
 
@@ -95,18 +111,54 @@ def get_project(
     current_user: Annotated[User, Depends(get_current_active_user)]
 ):
     """Get project details."""
+    # require_project_access verifies supervisor membership and returns project
+    project = require_project_access(db, current_user, project_id)
+    return project
+
+
+@router.patch("/{project_id}", response_model=ProjectSchema)
+def update_project(
+    project_id: int,
+    project_data: ProjectUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)]
+):
+    """Update project settings.
+
+    Requires STEWARD or PI role for the project's supervisor.
+    """
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
 
-    # Check membership
-    membership = (
-        db.query(Membership)
-        .filter(Membership.project_id == project_id, Membership.user_id == current_user.id)
-        .first()
-    )
-    if not membership:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this project")
+    # Require STEWARD or PI role to update projects
+    require_supervisor_role(db, current_user, project.supervisor_id, [SupervisorRole.STEWARD, SupervisorRole.PI])
+
+    # Update fields if provided
+    if project_data.name is not None:
+        # Check if new name conflicts
+        existing = db.query(Project).filter(
+            Project.name == project_data.name,
+            Project.id != project_id
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Project name already exists"
+            )
+        project.name = project_data.name
+
+    if project_data.description is not None:
+        project.description = project_data.description
+
+    if project_data.sample_id_rule_type is not None:
+        project.sample_id_rule_type = project_data.sample_id_rule_type
+
+    if project_data.sample_id_regex is not None:
+        project.sample_id_regex = project_data.sample_id_regex
+
+    db.commit()
+    db.refresh(project)
 
     return project
 
@@ -120,14 +172,8 @@ def list_memberships(
     current_user: Annotated[User, Depends(get_current_active_user)]
 ):
     """List project memberships."""
-    # Check user has access to project
-    membership = (
-        db.query(Membership)
-        .filter(Membership.project_id == project_id, Membership.user_id == current_user.id)
-        .first()
-    )
-    if not membership:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this project")
+    # Verify access via supervisor membership
+    require_project_access(db, current_user, project_id)
 
     memberships = db.query(Membership).filter(Membership.project_id == project_id).all()
     return memberships

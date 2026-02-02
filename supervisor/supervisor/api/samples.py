@@ -4,13 +4,13 @@ from typing import Annotated, Any
 import json
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func
 
 from supervisor.database import get_db
 from supervisor.models.user import User
 from supervisor.models.project import Project
 from supervisor.models.sample import Sample, SampleFieldValue, MetadataVisibility
-from supervisor.models.membership import Membership
 from supervisor.models.supervisor_membership import SupervisorRole
 from supervisor.schemas.sample import (
     Sample as SampleSchema,
@@ -18,7 +18,7 @@ from supervisor.schemas.sample import (
     SampleWithFields,
     FieldValueSet,
 )
-from supervisor.api.deps import get_current_active_user, require_supervisor_role
+from supervisor.api.deps import get_current_active_user, require_supervisor_role, require_project_access
 from supervisor.services.rdmp_service import get_current_rdmp, check_sample_completeness, validate_field_value
 from supervisor.services.permission_service import check_permission
 
@@ -27,31 +27,64 @@ class VisibilityUpdate(BaseModel):
     """Schema for updating sample visibility."""
     visibility: str
 
+
+class SampleListResponse(BaseModel):
+    """Paginated sample list response."""
+    items: list[SampleWithFields]
+    total: int
+    limit: int
+    offset: int
+
+
+class SampleSummary(BaseModel):
+    """Lightweight sample summary for list views."""
+    id: int
+    project_id: int
+    sample_identifier: str
+    visibility: str
+    created_at: Any
+    is_complete: bool | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class SampleListSummaryResponse(BaseModel):
+    """Paginated lightweight sample list response."""
+    items: list[SampleSummary]
+    total: int
+    limit: int
+    offset: int
+
+
 router = APIRouter()
 
 
-@router.get("/projects/{project_id}/samples", response_model=list[SampleWithFields])
+@router.get("/projects/{project_id}/samples", response_model=SampleListResponse)
 def list_samples(
     project_id: int,
     db: Annotated[Session, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_active_user)],
-    limit: int = 100,
+    limit: int = 50,
     offset: int = 0
 ):
-    """List samples in a project."""
-    # Check membership
-    membership = (
-        db.query(Membership)
-        .filter(Membership.project_id == project_id, Membership.user_id == current_user.id)
-        .first()
-    )
-    if not membership:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this project")
+    """List samples in a project with pagination.
 
-    # Get samples
+    Returns paginated samples with field values and completeness info.
+    Default limit is 50 for performance.
+    """
+    # Verify access via supervisor membership
+    require_project_access(db, current_user, project_id)
+
+    # Get total count (single query)
+    total = db.query(func.count(Sample.id)).filter(Sample.project_id == project_id).scalar()
+
+    # Get samples with eager loading of field_values to avoid N+1
     samples = (
         db.query(Sample)
+        .options(joinedload(Sample.field_values))
         .filter(Sample.project_id == project_id)
+        .order_by(Sample.id)
         .offset(offset)
         .limit(limit)
         .all()
@@ -61,7 +94,7 @@ def list_samples(
     rdmp = get_current_rdmp(db, project_id)
 
     # Build response with fields
-    result = []
+    items = []
     for sample in samples:
         fields_dict = {
             fv.field_key: json.loads(fv.value_json) if fv.value_json else None
@@ -70,13 +103,57 @@ def list_samples(
 
         completeness = check_sample_completeness(sample, rdmp) if rdmp else {}
 
-        result.append({
+        items.append({
             **sample.__dict__,
             "fields": fields_dict,
             "completeness": completeness
         })
 
-    return result
+    return SampleListResponse(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.get("/projects/{project_id}/samples/summary", response_model=SampleListSummaryResponse)
+def list_samples_summary(
+    project_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    limit: int = 100,
+    offset: int = 0
+):
+    """List samples with minimal data (no field values).
+
+    Use this endpoint for fast initial loading of sample lists.
+    Fetch full sample details via GET /samples/{id} when needed.
+    """
+    # Verify access via supervisor membership
+    require_project_access(db, current_user, project_id)
+
+    # Get total count
+    total = db.query(func.count(Sample.id)).filter(Sample.project_id == project_id).scalar()
+
+    # Get samples without field values (lightweight)
+    samples = (
+        db.query(Sample)
+        .filter(Sample.project_id == project_id)
+        .order_by(Sample.id)
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    items = [
+        SampleSummary(
+            id=s.id,
+            project_id=s.project_id,
+            sample_identifier=s.sample_identifier,
+            visibility=s.visibility.value if s.visibility else "PRIVATE",
+            created_at=s.created_at,
+            is_complete=None  # Not computed for performance
+        )
+        for s in samples
+    ]
+
+    return SampleListSummaryResponse(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.post("/projects/{project_id}/samples", response_model=SampleSchema, status_code=status.HTTP_201_CREATED)
@@ -133,14 +210,8 @@ def get_sample(
     if not sample:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sample not found")
 
-    # Check membership
-    membership = (
-        db.query(Membership)
-        .filter(Membership.project_id == sample.project_id, Membership.user_id == current_user.id)
-        .first()
-    )
-    if not membership:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this project")
+    # Verify access via supervisor membership
+    require_project_access(db, current_user, sample.project_id)
 
     # Build fields dict
     fields_dict = {

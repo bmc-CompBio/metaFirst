@@ -12,6 +12,7 @@ from supervisor.models.user import User
 from supervisor.models.supervisor import Supervisor
 from supervisor.models.project import Project
 from supervisor.models.membership import Membership
+from supervisor.models.supervisor_membership import SupervisorMembership, SupervisorRole
 from supervisor.models.rdmp import RDMPVersion
 from supervisor.models.storage import StorageRoot
 from supervisor.models.sample import Sample
@@ -86,16 +87,27 @@ def test_user2(db) -> User:
 
 
 @pytest.fixture
-def test_supervisor(db) -> Supervisor:
-    """Create a test supervisor."""
+def test_supervisor(db, test_user) -> Supervisor:
+    """Create a test supervisor with test_user as PI member."""
     supervisor = Supervisor(
         name="Test Supervisor",
         description="A test supervisor",
         supervisor_db_dsn="sqlite:///:memory:",  # In-memory for tests
+        primary_steward_user_id=test_user.id,
     )
     db.add(supervisor)
     db.commit()
     db.refresh(supervisor)
+
+    # Add test_user as PI of the supervisor (required for project access)
+    sup_membership = SupervisorMembership(
+        supervisor_id=supervisor.id,
+        user_id=test_user.id,
+        role=SupervisorRole.PI,
+    )
+    db.add(sup_membership)
+    db.commit()
+
     return supervisor
 
 

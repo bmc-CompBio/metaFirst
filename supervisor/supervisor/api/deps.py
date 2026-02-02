@@ -117,3 +117,50 @@ def require_any_supervisor_role(
             detail="Not a member of this supervisor",
         )
     return role
+
+
+def get_user_supervisor_ids(db: Session, user_id: int) -> list[int]:
+    """Get list of supervisor IDs the user is a member of."""
+    memberships = db.query(SupervisorMembership.supervisor_id).filter(
+        SupervisorMembership.user_id == user_id,
+    ).all()
+    return [m.supervisor_id for m in memberships]
+
+
+def require_project_access(
+    db: Session,
+    user: User,
+    project_id: int,
+) -> "Project":
+    """Verify user has access to a project via supervisor membership.
+
+    Args:
+        db: Database session
+        user: Current user
+        project_id: ID of the project to access
+
+    Returns:
+        The project if user has access
+
+    Raises:
+        HTTPException 404 if project not found
+        HTTPException 403 if user is not a member of the project's supervisor
+    """
+    from supervisor.models.project import Project
+
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
+
+    # Check supervisor membership
+    role = get_user_supervisor_role(db, user.id, project.supervisor_id)
+    if role is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not a member of this project's supervisor",
+        )
+
+    return project

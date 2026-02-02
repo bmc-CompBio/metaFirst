@@ -1,4 +1,4 @@
-import type { Project, RDMP, Sample, RawDataItem, User, StorageRoot, PendingIngest, PendingIngestFinalize } from '../types';
+import type { Project, RDMP, Sample, RawDataItem, User, StorageRoot, PendingIngest, PendingIngestFinalize, RDMPVersion, ProjectUpdate, RDMPCreate, RDMPUpdate, Supervisor, ProjectCreate, SupervisorMember, SampleListResponse } from '../types';
 
 const API_BASE = '/api';
 
@@ -66,14 +66,71 @@ class ApiClient {
     return this.request<Project>(`/projects/${projectId}`);
   }
 
+  async createProject(data: ProjectCreate): Promise<Project> {
+    return this.request<Project>('/projects/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Supervisors
+  async getSupervisors(): Promise<Supervisor[]> {
+    return this.request<Supervisor[]>('/supervisors/');
+  }
+
+  async getSupervisor(supervisorId: number): Promise<Supervisor> {
+    return this.request<Supervisor>(`/supervisors/${supervisorId}`);
+  }
+
+  // Supervisor Members
+  async getSupervisorMembers(supervisorId: number): Promise<SupervisorMember[]> {
+    return this.request<SupervisorMember[]>(`/supervisors/${supervisorId}/members`);
+  }
+
+  async addSupervisorMember(supervisorId: number, username: string, role: string): Promise<SupervisorMember> {
+    return this.request<SupervisorMember>(`/supervisors/${supervisorId}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ username, role }),
+    });
+  }
+
+  async updateSupervisorMember(supervisorId: number, userId: number, role: string): Promise<SupervisorMember> {
+    return this.request<SupervisorMember>(`/supervisors/${supervisorId}/members/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    });
+  }
+
+  async removeSupervisorMember(supervisorId: number, userId: number): Promise<void> {
+    await this.request<void>(`/supervisors/${supervisorId}/members/${userId}`, {
+      method: 'DELETE',
+    });
+  }
+
   // RDMP
   async getProjectRDMP(projectId: number): Promise<RDMP> {
     return this.request<RDMP>(`/rdmp/projects/${projectId}/rdmp`);
   }
 
+  async getActiveRDMP(projectId: number): Promise<RDMPVersion | null> {
+    const response = await fetch(`${API_BASE}/projects/${projectId}/rdmps/active`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.token ? { 'Authorization': `Bearer ${this.token}` } : {}),
+      },
+    });
+    if (!response.ok) {
+      if (response.status === 404) return null;
+      const error = await response.json().catch(() => ({ detail: 'Request failed' }));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    return data || null;
+  }
+
   // Samples
-  async getSamples(projectId: number): Promise<Sample[]> {
-    return this.request<Sample[]>(`/projects/${projectId}/samples`);
+  async getSamples(projectId: number, limit: number = 50, offset: number = 0): Promise<SampleListResponse> {
+    return this.request<SampleListResponse>(`/projects/${projectId}/samples?limit=${limit}&offset=${offset}`);
   }
 
   async getSample(sampleId: number): Promise<Sample> {
@@ -128,6 +185,43 @@ class ApiClient {
     await this.request<void>(`/samples/${sampleId}/fields/${fieldKey}`, {
       method: 'PUT',
       body: JSON.stringify({ value }),
+    });
+  }
+
+  // Project Settings
+  async updateProject(projectId: number, data: ProjectUpdate): Promise<Project> {
+    return this.request<Project>(`/projects/${projectId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // RDMP Management
+  async listRDMPVersions(projectId: number): Promise<RDMPVersion[]> {
+    return this.request<RDMPVersion[]>(`/projects/${projectId}/rdmps`);
+  }
+
+  async createRDMPDraft(projectId: number, data: RDMPCreate): Promise<RDMPVersion> {
+    return this.request<RDMPVersion>(`/projects/${projectId}/rdmps`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getRDMPVersion(rdmpId: number): Promise<RDMPVersion> {
+    return this.request<RDMPVersion>(`/rdmps/${rdmpId}`);
+  }
+
+  async updateRDMPDraft(rdmpId: number, data: RDMPUpdate): Promise<RDMPVersion> {
+    return this.request<RDMPVersion>(`/rdmps/${rdmpId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async activateRDMP(rdmpId: number): Promise<RDMPVersion> {
+    return this.request<RDMPVersion>(`/rdmps/${rdmpId}/activate`, {
+      method: 'POST',
     });
   }
 }

@@ -12,6 +12,41 @@ Licensed under the [MIT License](LICENSE).
 - **Event-driven ingest** — file watchers detect new data and prompt for metadata entry in the browser
 - **Federated discovery** — cross-project search operates on metadata only; raw data is never exposed
 
+## Concepts
+
+### Supervisors and Projects
+
+A **supervisor** represents a research group or organizational unit (e.g., a PI's lab). Projects belong to supervisors.
+
+- Users are members of supervisors with roles: **PI**, **STEWARD**, or **RESEARCHER**
+- Project visibility is supervisor-scoped: users only see projects from their supervisors
+- PIs can create projects and manage supervisor membership
+- STEWARDs can create projects and manage operational state
+- RESEARCHERs can trigger ingests and access project data
+
+### RDMPs (Research Data Management Plans)
+
+RDMPs define the data governance rules for a project:
+
+- **Fields**: What metadata to collect (name, type, required)
+- **Roles**: Who can do what (edit samples, manage RDMP, view data)
+- **Visibility**: Per-field access levels (private, collaborators, public_index)
+
+RDMP lifecycle: `DRAFT → ACTIVE → SUPERSEDED`
+
+- Only one ACTIVE RDMP per project at any time
+- PI approval required to activate a draft
+- New activations move the previous ACTIVE to SUPERSEDED
+
+### Samples and Ingest
+
+A **sample** is the fundamental unit of metadata. Samples are created via:
+
+1. **Manual entry**: Create samples directly in the UI
+2. **Ingest workflow**: File watcher detects new data, creates pending ingest, user completes metadata
+
+The ingest helper watches folders for new files and creates pending ingests. Users finalize them via browser, optionally creating or linking samples.
+
 ## Status
 
 Active proof-of-principle. Core functionality is implemented; some features (releases, discovery UI) are planned.

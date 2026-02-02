@@ -19,13 +19,15 @@ export function IngestForm({
   onComplete,
   onCancel,
 }: IngestFormProps) {
+  // Use detected sample ID if available, fall back to inferred
+  const initialIdentifier = ingest.detected_sample_id || ingest.inferred_sample_identifier || '';
+  const hasDetectedId = !!ingest.detected_sample_id;
+
   const [sampleOption, setSampleOption] = useState<'existing' | 'new'>(
-    ingest.inferred_sample_identifier ? 'new' : 'existing'
+    initialIdentifier ? 'new' : 'existing'
   );
   const [selectedSampleId, setSelectedSampleId] = useState<number | null>(null);
-  const [newSampleIdentifier, setNewSampleIdentifier] = useState(
-    ingest.inferred_sample_identifier || ''
-  );
+  const [newSampleIdentifier, setNewSampleIdentifier] = useState(initialIdentifier);
   const [fieldValues, setFieldValues] = useState<Record<string, unknown>>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -175,6 +177,37 @@ export function IngestForm({
             <span style={styles.hash}>{ingest.file_hash_sha256.substring(0, 16)}...</span>
           </div>
         )}
+      </div>
+
+      {/* Sample ID Detection Panel */}
+      <div style={styles.detectionPanel}>
+        <h4 style={styles.detectionTitle}>Detected Identifiers</h4>
+        <div style={styles.detectionContent}>
+          <div style={styles.detectionRow}>
+            <span style={styles.detectionLabel}>Detected Sample ID:</span>
+            <span style={hasDetectedId ? styles.detectedId : styles.noDetection}>
+              {ingest.detected_sample_id || 'None'}
+            </span>
+          </div>
+          <div style={styles.detectionRow}>
+            <span style={styles.detectionLabel}>Rule:</span>
+            <span style={styles.detectionValue}>
+              {ingest.detection_info?.configured
+                ? `Filename regex: ${ingest.detection_info.regex || '(not set)'}`
+                : 'No rule configured'}
+            </span>
+          </div>
+          {ingest.detection_info?.configured && (
+            <div style={styles.detectionRow}>
+              <span style={styles.detectionLabel}>Example:</span>
+              <span style={styles.detectionExample}>
+                {ingest.detection_info.example_filename}
+                {' → '}
+                {ingest.detection_info.example_result || 'no match'}
+              </span>
+            </div>
+          )}
+        </div>
       </div>
 
       <form onSubmit={handleSubmit}>
@@ -330,6 +363,47 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: 'monospace',
     fontSize: '12px',
     color: '#6b7280',
+  },
+  detectionPanel: {
+    padding: '12px 16px',
+    background: '#f0fdf4',
+    borderBottom: '1px solid #bbf7d0',
+  },
+  detectionTitle: {
+    fontSize: '13px',
+    fontWeight: 600,
+    color: '#166534',
+    margin: '0 0 8px 0',
+  },
+  detectionContent: {
+    fontSize: '13px',
+  },
+  detectionRow: {
+    display: 'flex',
+    gap: '8px',
+    marginBottom: '4px',
+  },
+  detectionLabel: {
+    color: '#6b7280',
+    minWidth: '130px',
+  },
+  detectionValue: {
+    color: '#374151',
+    fontFamily: 'monospace',
+    fontSize: '12px',
+  },
+  detectedId: {
+    color: '#166534',
+    fontWeight: 600,
+  },
+  noDetection: {
+    color: '#9ca3af',
+    fontStyle: 'italic',
+  },
+  detectionExample: {
+    color: '#6b7280',
+    fontFamily: 'monospace',
+    fontSize: '12px',
   },
   section: {
     padding: '16px',

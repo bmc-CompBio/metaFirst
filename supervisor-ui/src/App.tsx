@@ -9,7 +9,13 @@ import { IngestInbox } from './components/IngestInbox';
 import { IngestForm } from './components/IngestForm';
 import { IngestPage } from './components/IngestPage';
 import { SampleDetailModal } from './components/SampleDetailModal';
-import type { User, Project, RDMP, Sample, RawDataItem, PendingIngest, StorageRoot } from './types';
+import { ProjectSettings } from './components/ProjectSettings';
+import { RDMPManagement } from './components/RDMPManagement';
+import { CreateProjectWizard } from './components/CreateProjectWizard';
+import { NoActiveRDMPBanner } from './components/NoActiveRDMPBanner';
+import { SupervisorMembers } from './components/SupervisorMembers';
+import { ProjectsOverview } from './components/ProjectsOverview';
+import type { User, Project, RDMP, Sample, RawDataItem, PendingIngest, StorageRoot, RDMPVersion } from './types';
 
 function App() {
   const navigate = useNavigate();
@@ -31,13 +37,20 @@ function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [rdmp, setRdmp] = useState<RDMP | null>(null);
+  const [activeRDMP, setActiveRDMP] = useState<RDMPVersion | null>(null);
   const [samples, setSamples] = useState<Sample[]>([]);
   const [rawData, setRawData] = useState<RawDataItem[]>([]);
   const [storageRoots, setStorageRoots] = useState<StorageRoot[]>([]);
 
+  // UI state
+  const [showCreateProjectWizard, setShowCreateProjectWizard] = useState(false);
+
   // Loading states
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
+
+  // Refresh trigger - increment to force data reload for current project
+  const [refreshCounter, setRefreshCounter] = useState(0);
 
   // Set token in API client when it changes
   useEffect(() => {
@@ -81,30 +94,47 @@ function App() {
 
   // Load project data when selection changes
   useEffect(() => {
-    if (selectedProjectId) {
-      loadProjectData(selectedProjectId);
-    }
-  }, [selectedProjectId]);
+    if (!selectedProjectId) return;
 
-  const loadProjectData = async (projectId: number) => {
-    setLoadingData(true);
-    try {
-      const [rdmpData, samplesData, rawDataData, storageRootsData] = await Promise.all([
-        apiClient.getProjectRDMP(projectId).catch(() => null),
-        apiClient.getSamples(projectId),
-        apiClient.getRawData(projectId),
-        apiClient.getStorageRoots(projectId),
-      ]);
-      setRdmp(rdmpData);
-      setSamples(samplesData);
-      setRawData(rawDataData);
-      setStorageRoots(storageRootsData);
-    } catch (error) {
-      console.error('Failed to load project data:', error);
-    } finally {
-      setLoadingData(false);
-    }
-  };
+    // Track if this effect is still active (for race condition prevention)
+    let isActive = true;
+    const projectIdToLoad = selectedProjectId;
+
+    const doLoad = async () => {
+      setLoadingData(true);
+      try {
+        const [rdmpData, activeRdmpData, samplesResponse, rawDataData, storageRootsData] = await Promise.all([
+          apiClient.getProjectRDMP(projectIdToLoad).catch(() => null),
+          apiClient.getActiveRDMP(projectIdToLoad).catch(() => null),
+          apiClient.getSamples(projectIdToLoad),
+          apiClient.getRawData(projectIdToLoad),
+          apiClient.getStorageRoots(projectIdToLoad),
+        ]);
+
+        // Only update state if this effect is still active (project hasn't changed)
+        if (isActive) {
+          setRdmp(rdmpData);
+          setActiveRDMP(activeRdmpData);
+          setSamples(samplesResponse.items);
+          setRawData(rawDataData);
+          setStorageRoots(storageRootsData);
+          setLoadingData(false);
+        }
+      } catch (error) {
+        console.error('Failed to load project data:', error);
+        if (isActive) {
+          setLoadingData(false);
+        }
+      }
+    };
+
+    doLoad();
+
+    // Cleanup: mark this effect as inactive when project changes
+    return () => {
+      isActive = false;
+    };
+  }, [selectedProjectId, refreshCounter]);
 
   const handleLogin = useCallback(async (username: string, password: string) => {
     try {
@@ -133,13 +163,40 @@ function App() {
 
   const handleProjectSelect = useCallback((projectId: number) => {
     setSelectedProjectId(projectId);
+    // Set loading state FIRST to prevent banner flashing
+    setLoadingData(true);
     // Clear previous project data
     setRdmp(null);
+    setActiveRDMP(null);
     setSamples([]);
     setRawData([]);
     setStorageRoots([]);
     setSelectedPendingIngest(null);
     setSelectedSample(null);
+  }, []);
+
+  // Handle project creation from wizard
+  const handleProjectCreated = useCallback((project: Project) => {
+    // Add project to list
+    setProjects(prev => [...prev, project]);
+    // Set loading state FIRST to prevent stale data from showing
+    setLoadingData(true);
+    // Clear all project-scoped data from previous project
+    setRdmp(null);
+    setActiveRDMP(null);
+    setSamples([]);
+    setRawData([]);
+    setStorageRoots([]);
+    setSelectedPendingIngest(null);
+    setSelectedSample(null);
+    // Then set the new project ID (will trigger loadProjectData via useEffect)
+    setSelectedProjectId(project.id);
+  }, []);
+
+  const handleCreateProjectWizardClose = useCallback(() => {
+    setShowCreateProjectWizard(false);
+    // Data is already loaded via useEffect when selectedProjectId changes
+    // and activeRDMP is set via onRDMPActivated callback from wizard
   }, []);
 
   const handleSelectPendingIngest = useCallback((ingest: PendingIngest) => {
@@ -148,11 +205,9 @@ function App() {
 
   const handleIngestComplete = useCallback(() => {
     setSelectedPendingIngest(null);
-    // Reload project data to get updated samples and raw data
-    if (selectedProjectId) {
-      loadProjectData(selectedProjectId);
-    }
-  }, [selectedProjectId]);
+    // Trigger data reload to get updated samples and raw data
+    setRefreshCounter(c => c + 1);
+  }, []);
 
   const handleIngestCancel = useCallback(() => {
     setSelectedPendingIngest(null);
@@ -164,6 +219,19 @@ function App() {
       setSelectedProjectId(projectId);
     }
   }, [selectedProjectId]);
+
+  // Callback for when project settings are updated
+  const handleProjectUpdated = useCallback((updatedProject: Project) => {
+    setProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
+  }, []);
+
+  // Callback for when RDMP is activated - update state immediately and reload
+  const handleRDMPActivated = useCallback((activatedRDMP: RDMPVersion) => {
+    // Set the active RDMP immediately to ensure UI consistency
+    setActiveRDMP(activatedRDMP);
+    // Trigger data reload to get any other updates
+    setRefreshCounter(c => c + 1);
+  }, []);
 
   // Show loading while checking auth
   if (authChecking) {
@@ -212,6 +280,7 @@ function App() {
           project={selectedProject}
           onSelectIngest={handleSelectPendingIngest}
           storageRoots={storageRoots}
+          hasActiveRDMP={!!activeRDMP}
         />
       );
     }
@@ -230,7 +299,13 @@ function App() {
   };
 
   // Determine current tab from route
-  const currentTab = location.pathname === '/inbox' ? 'inbox' : 'metadata';
+  const getCurrentTab = () => {
+    if (location.pathname === '/inbox') return 'inbox';
+    if (location.pathname === '/settings') return 'settings';
+    if (location.pathname === '/rdmps') return 'rdmps';
+    return 'metadata';
+  };
+  const currentTab = getCurrentTab();
 
   return (
     <div style={styles.app}>
@@ -238,6 +313,25 @@ function App() {
 
       <main style={styles.main}>
         <Routes>
+          {/* Projects Overview page */}
+          <Route
+            path="/overview"
+            element={
+              <ProjectsOverview
+                onSelectProject={(projectId) => {
+                  handleProjectSelect(projectId);
+                  navigate('/');
+                }}
+              />
+            }
+          />
+
+          {/* Supervisor Members management */}
+          <Route
+            path="/supervisors/:supervisorId/members"
+            element={<SupervisorMembers />}
+          />
+
           {/* Direct ingest page - no project selection required */}
           <Route
             path="/ingest/:pendingId"
@@ -260,6 +354,7 @@ function App() {
                     selectedProjectId={selectedProjectId}
                     onSelect={handleProjectSelect}
                     loading={loadingProjects}
+                    onCreateProject={() => setShowCreateProjectWizard(true)}
                   />
                 </div>
 
@@ -270,12 +365,21 @@ function App() {
                       {selectedProject.description && (
                         <p style={styles.projectDescription}>{selectedProject.description}</p>
                       )}
-                      {rdmp && (
+                      {activeRDMP ? (
+                        <p style={styles.rdmpInfo}>
+                          RDMP: {activeRDMP.title} (v{activeRDMP.version}) - Active
+                        </p>
+                      ) : rdmp ? (
                         <p style={styles.rdmpInfo}>
                           RDMP: {rdmp.rdmp_json.name} (v{rdmp.version_int})
                         </p>
-                      )}
+                      ) : null}
                     </div>
+
+                    {/* No Active RDMP Warning Banner */}
+                    {!loadingData && !activeRDMP && (
+                      <NoActiveRDMPBanner projectId={selectedProject.id} />
+                    )}
 
                     {/* Navigation tabs */}
                     <div style={styles.tabs}>
@@ -300,6 +404,24 @@ function App() {
                       >
                         Ingest Inbox
                       </button>
+                      <button
+                        style={{
+                          ...styles.tab,
+                          ...(currentTab === 'rdmps' ? styles.tabActive : {}),
+                        }}
+                        onClick={() => navigate('/rdmps')}
+                      >
+                        RDMPs
+                      </button>
+                      <button
+                        style={{
+                          ...styles.tab,
+                          ...(currentTab === 'settings' ? styles.tabActive : {}),
+                        }}
+                        onClick={() => navigate('/settings')}
+                      >
+                        Settings
+                      </button>
                     </div>
                   </div>
                 )}
@@ -307,6 +429,36 @@ function App() {
                 <Routes>
                   <Route path="/" element={renderProjectContent('metadata')} />
                   <Route path="/inbox" element={renderProjectContent('inbox')} />
+                  <Route
+                    path="/settings"
+                    element={
+                      selectedProject ? (
+                        <ProjectSettings
+                          project={selectedProject}
+                          onProjectUpdated={handleProjectUpdated}
+                        />
+                      ) : (
+                        <div style={styles.placeholder}>
+                          <p>Select a project to view its settings</p>
+                        </div>
+                      )
+                    }
+                  />
+                  <Route
+                    path="/rdmps"
+                    element={
+                      selectedProject ? (
+                        <RDMPManagement
+                          project={selectedProject}
+                          onRDMPActivated={handleRDMPActivated}
+                        />
+                      ) : (
+                        <div style={styles.placeholder}>
+                          <p>Select a project to manage RDMPs</p>
+                        </div>
+                      )
+                    }
+                  />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
               </>
@@ -323,6 +475,15 @@ function App() {
           fields={fields}
           storageRoots={storageRoots}
           onClose={() => setSelectedSample(null)}
+        />
+      )}
+
+      {/* Create Project Wizard */}
+      {showCreateProjectWizard && (
+        <CreateProjectWizard
+          onClose={handleCreateProjectWizardClose}
+          onProjectCreated={handleProjectCreated}
+          onRDMPActivated={(rdmp) => setActiveRDMP(rdmp)}
         />
       )}
     </div>
