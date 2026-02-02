@@ -44,10 +44,11 @@ export function IngestPage({ onProjectLoaded, onIngestComplete }: IngestPageProp
         const pendingIngest = await apiClient.getPendingIngest(Number(pendingId));
         setIngest(pendingIngest);
 
-        // Set initial form state based on inferred sample identifier
-        if (pendingIngest.inferred_sample_identifier) {
+        // Set initial form state based on detected or inferred sample identifier
+        const initialId = pendingIngest.detected_sample_id || pendingIngest.inferred_sample_identifier;
+        if (initialId) {
           setSampleOption('new');
-          setNewSampleIdentifier(pendingIngest.inferred_sample_identifier);
+          setNewSampleIdentifier(initialId);
         } else {
           setSampleOption('existing');
         }
@@ -275,6 +276,37 @@ export function IngestPage({ onProjectLoaded, onIngestComplete }: IngestPageProp
           )}
         </div>
 
+        {/* Sample ID Detection Panel */}
+        <div style={styles.detectionPanel}>
+          <h4 style={styles.detectionTitle}>Detected Identifiers</h4>
+          <div style={styles.detectionContent}>
+            <div style={styles.detectionRow}>
+              <span style={styles.detectionLabel}>Detected Sample ID:</span>
+              <span style={ingest.detected_sample_id ? styles.detectedId : styles.noDetection}>
+                {ingest.detected_sample_id || 'None'}
+              </span>
+            </div>
+            <div style={styles.detectionRow}>
+              <span style={styles.detectionLabel}>Rule:</span>
+              <span style={styles.detectionValue}>
+                {ingest.detection_info?.configured
+                  ? `Filename regex: ${ingest.detection_info.regex || '(not set)'}`
+                  : 'No rule configured'}
+              </span>
+            </div>
+            {ingest.detection_info?.configured && (
+              <div style={styles.detectionRow}>
+                <span style={styles.detectionLabel}>Example:</span>
+                <span style={styles.detectionExample}>
+                  {ingest.detection_info.example_filename}
+                  {' → '}
+                  {ingest.detection_info.example_result || 'no match'}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+
         <form onSubmit={handleSubmit}>
           {/* Sample Selection */}
           <div style={styles.section}>
@@ -473,6 +505,47 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: 'monospace',
     fontSize: '12px',
     color: '#6b7280',
+  },
+  detectionPanel: {
+    padding: '12px 16px',
+    background: '#f0fdf4',
+    borderBottom: '1px solid #bbf7d0',
+  },
+  detectionTitle: {
+    fontSize: '13px',
+    fontWeight: 600,
+    color: '#166534',
+    margin: '0 0 8px 0',
+  },
+  detectionContent: {
+    fontSize: '13px',
+  },
+  detectionRow: {
+    display: 'flex',
+    gap: '8px',
+    marginBottom: '4px',
+  },
+  detectionLabel: {
+    color: '#6b7280',
+    minWidth: '130px',
+  },
+  detectionValue: {
+    color: '#374151',
+    fontFamily: 'monospace',
+    fontSize: '12px',
+  },
+  detectedId: {
+    color: '#166534',
+    fontWeight: 600,
+  },
+  noDetection: {
+    color: '#9ca3af',
+    fontStyle: 'italic',
+  },
+  detectionExample: {
+    color: '#6b7280',
+    fontFamily: 'monospace',
+    fontSize: '12px',
   },
   section: {
     padding: '16px',

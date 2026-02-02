@@ -12,6 +12,8 @@ export interface Project {
   created_by: number;
   supervisor_id: number;
   is_active: boolean;
+  sample_id_rule_type: string | null;
+  sample_id_regex: string | null;
 }
 
 export interface RDMPField {
@@ -90,6 +92,15 @@ export interface StorageRoot {
   created_at: string;
 }
 
+export interface SampleIdDetectionInfo {
+  rule_type: string | null;
+  regex: string | null;
+  example_filename: string | null;
+  example_result: string | null;
+  configured: boolean;
+  explanation: string | null;
+}
+
 export interface PendingIngest {
   id: number;
   project_id: number;
@@ -105,6 +116,8 @@ export interface PendingIngest {
   raw_data_item_id: number | null;
   storage_root_name?: string;
   project_name?: string;
+  detected_sample_id?: string | null;
+  detection_info?: SampleIdDetectionInfo | null;
 }
 
 export interface PendingIngestFinalize {
