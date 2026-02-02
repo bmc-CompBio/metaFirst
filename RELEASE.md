@@ -1,5 +1,51 @@
 # Release Notes
 
+## v0.3.1 — Project Lifecycle and Governance UI
+
+**Release date:** 2026-02-02
+
+Completes the project lifecycle and governance UI. See [RELEASE_NOTES_v0.3.1.md](RELEASE_NOTES_v0.3.1.md) for full details.
+
+**Highlights:**
+- Create Project wizard with RDMP setup
+- Project Settings and RDMP Management pages
+- Supervisor member management UI
+- Projects Overview dashboard
+- Supervisor-scoped project visibility and access
+- Sample ID extraction rules with detection panel
+- Paginated samples API with performance improvements
+- Demo seed creates operational projects with ACTIVE RDMPs
+
+---
+
+## v0.3.0 — Metadata Visibility and Soft Enforcement
+
+**Release date:** 2026-01-31
+
+Adds metadata visibility controls and RDMP soft enforcement with remediation tasks.
+
+**Highlights:**
+- Per-field visibility levels (private, collaborators, public_index)
+- Discovery access control respects visibility settings
+- RDMP soft enforcement flags incomplete samples
+- Remediation task workflow for data stewards
+
+---
+
+## v0.2.0 — Multi-Tenant Architecture
+
+**Release date:** 2026-01-30
+
+Introduces supervisor-scoped roles and project-only RDMPs.
+
+**Highlights:**
+- Supervisor entity with PI/STEWARD/RESEARCHER roles
+- Per-supervisor operational databases
+- Project-only RDMPs with lifecycle (DRAFT → ACTIVE → SUPERSEDED)
+- Ingest run provenance with RDMP link
+
+---
+
 ## v0.1.0 — Foundational Proof of Principle
 
 **Release date:** 2025-01-30
