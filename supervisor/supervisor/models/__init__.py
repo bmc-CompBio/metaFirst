@@ -12,6 +12,7 @@ from supervisor.models.raw_data import RawDataItem, PathChange
 from supervisor.models.audit import AuditLog
 from supervisor.models.release import Release
 from supervisor.models.pending_ingest import PendingIngest, IngestStatus
+from supervisor.models.remediation import RemediationTask, IssueType, TaskStatus
 
 __all__ = [
     "Supervisor",
@@ -36,4 +37,7 @@ __all__ = [
     "Release",
     "PendingIngest",
     "IngestStatus",
+    "RemediationTask",
+    "IssueType",
+    "TaskStatus",
 ]
