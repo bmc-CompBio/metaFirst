@@ -4,7 +4,7 @@ import type { Project, RDMPVersion } from '../types';
 
 interface RDMPManagementProps {
   project: Project;
-  onRDMPActivated?: () => void;
+  onRDMPActivated?: (activeRDMP: RDMPVersion) => void;
 }
 
 export function RDMPManagement({ project, onRDMPActivated }: RDMPManagementProps) {
@@ -121,9 +121,9 @@ export function RDMPManagement({ project, onRDMPActivated }: RDMPManagementProps
     setActivatingId(rdmpId);
 
     try {
-      await apiClient.activateRDMP(rdmpId);
+      const activatedRDMP = await apiClient.activateRDMP(rdmpId);
       await loadRDMPs();
-      onRDMPActivated?.();
+      onRDMPActivated?.(activatedRDMP);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to activate RDMP');
     } finally {

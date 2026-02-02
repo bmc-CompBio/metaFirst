@@ -143,6 +143,8 @@ function App() {
 
   const handleProjectSelect = useCallback((projectId: number) => {
     setSelectedProjectId(projectId);
+    // Set loading state FIRST to prevent banner flashing
+    setLoadingData(true);
     // Clear previous project data
     setRdmp(null);
     setActiveRDMP(null);
@@ -195,8 +197,11 @@ function App() {
     setProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
   }, []);
 
-  // Callback for when RDMP is activated - reload project data
-  const handleRDMPActivated = useCallback(() => {
+  // Callback for when RDMP is activated - update state immediately and reload
+  const handleRDMPActivated = useCallback((activatedRDMP: RDMPVersion) => {
+    // Set the active RDMP immediately to ensure UI consistency
+    setActiveRDMP(activatedRDMP);
+    // Also reload project data to get any other updates
     if (selectedProjectId) {
       loadProjectData(selectedProjectId);
     }

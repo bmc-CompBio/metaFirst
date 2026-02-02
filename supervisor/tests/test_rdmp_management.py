@@ -262,6 +262,144 @@ class TestRDMPActivation:
         assert active_count == 1
 
 
+class TestRDMPActivationScoping:
+    """Test that RDMP activation is properly scoped to project."""
+
+    def test_activating_rdmp_in_project_a_does_not_affect_project_b(
+        self, client, test_db, users, supervisor_and_project
+    ):
+        """Activating an RDMP in project A should NOT supersede active RDMP in project B."""
+        supervisor = supervisor_and_project["supervisor"]
+        project_a = supervisor_and_project["project"]
+
+        # Create project B under the same supervisor
+        project_b = Project(
+            name="Project B",
+            description="Second test project",
+            supervisor_id=supervisor.id,
+            created_by=users["pi_user"].id,
+        )
+        test_db.add(project_b)
+        test_db.commit()
+        test_db.refresh(project_b)
+
+        # Add project B membership
+        membership_b = Membership(
+            project_id=project_b.id,
+            user_id=users["pi_user"].id,
+            role_name="PI",
+            created_by=users["pi_user"].id,
+        )
+        test_db.add(membership_b)
+        test_db.commit()
+
+        pi_headers = get_auth_headers(client, "pi_user")
+
+        # Create and activate RDMP in project A
+        response = client.post(
+            f"/api/projects/{project_a.id}/rdmps",
+            json={"title": "RDMP A", "content": {}},
+            headers=pi_headers,
+        )
+        rdmp_a_id = response.json()["id"]
+        client.post(f"/api/rdmps/{rdmp_a_id}/activate", headers=pi_headers)
+
+        # Create and activate RDMP in project B
+        response = client.post(
+            f"/api/projects/{project_b.id}/rdmps",
+            json={"title": "RDMP B", "content": {}},
+            headers=pi_headers,
+        )
+        rdmp_b_id = response.json()["id"]
+        client.post(f"/api/rdmps/{rdmp_b_id}/activate", headers=pi_headers)
+
+        # Verify both RDMPs are ACTIVE
+        response = client.get(f"/api/rdmps/{rdmp_a_id}", headers=pi_headers)
+        assert response.json()["status"] == "ACTIVE", "Project A's RDMP should still be ACTIVE"
+
+        response = client.get(f"/api/rdmps/{rdmp_b_id}", headers=pi_headers)
+        assert response.json()["status"] == "ACTIVE", "Project B's RDMP should be ACTIVE"
+
+        # Now create and activate a NEW RDMP in project A
+        response = client.post(
+            f"/api/projects/{project_a.id}/rdmps",
+            json={"title": "RDMP A v2", "content": {}},
+            headers=pi_headers,
+        )
+        rdmp_a_v2_id = response.json()["id"]
+        client.post(f"/api/rdmps/{rdmp_a_v2_id}/activate", headers=pi_headers)
+
+        # Verify: Project A's first RDMP should be SUPERSEDED
+        response = client.get(f"/api/rdmps/{rdmp_a_id}", headers=pi_headers)
+        assert response.json()["status"] == "SUPERSEDED", "Project A's first RDMP should be SUPERSEDED"
+
+        # Verify: Project A's second RDMP should be ACTIVE
+        response = client.get(f"/api/rdmps/{rdmp_a_v2_id}", headers=pi_headers)
+        assert response.json()["status"] == "ACTIVE", "Project A's second RDMP should be ACTIVE"
+
+        # CRITICAL: Project B's RDMP should STILL be ACTIVE (not affected)
+        response = client.get(f"/api/rdmps/{rdmp_b_id}", headers=pi_headers)
+        assert response.json()["status"] == "ACTIVE", "Project B's RDMP should NOT be affected"
+
+        # Verify via the active endpoint
+        response = client.get(f"/api/projects/{project_a.id}/rdmps/active", headers=pi_headers)
+        assert response.status_code == 200
+        assert response.json()["id"] == rdmp_a_v2_id
+
+        response = client.get(f"/api/projects/{project_b.id}/rdmps/active", headers=pi_headers)
+        assert response.status_code == 200
+        assert response.json()["id"] == rdmp_b_id
+
+    def test_active_endpoint_returns_correct_project_rdmp(
+        self, client, test_db, users, supervisor_and_project
+    ):
+        """The /active endpoint should return the active RDMP for the specific project only."""
+        supervisor = supervisor_and_project["supervisor"]
+        project_a = supervisor_and_project["project"]
+
+        # Create project B
+        project_b = Project(
+            name="Project B Active Test",
+            description="Test project",
+            supervisor_id=supervisor.id,
+            created_by=users["pi_user"].id,
+        )
+        test_db.add(project_b)
+        test_db.commit()
+        test_db.refresh(project_b)
+
+        membership_b = Membership(
+            project_id=project_b.id,
+            user_id=users["pi_user"].id,
+            role_name="PI",
+            created_by=users["pi_user"].id,
+        )
+        test_db.add(membership_b)
+        test_db.commit()
+
+        pi_headers = get_auth_headers(client, "pi_user")
+
+        # Activate RDMP only in project A
+        response = client.post(
+            f"/api/projects/{project_a.id}/rdmps",
+            json={"title": "RDMP A Only", "content": {}},
+            headers=pi_headers,
+        )
+        rdmp_a_id = response.json()["id"]
+        client.post(f"/api/rdmps/{rdmp_a_id}/activate", headers=pi_headers)
+
+        # Project A should have active RDMP
+        response = client.get(f"/api/projects/{project_a.id}/rdmps/active", headers=pi_headers)
+        assert response.status_code == 200
+        assert response.json()["id"] == rdmp_a_id
+
+        # Project B should have NO active RDMP (returns null)
+        response = client.get(f"/api/projects/{project_b.id}/rdmps/active", headers=pi_headers)
+        assert response.status_code == 200
+        # The endpoint returns null (not 404) when no active RDMP
+        assert response.json() is None
+
+
 class TestIngestRunRDMPProvenance:
     """Test that ingest runs record RDMP provenance."""
 
