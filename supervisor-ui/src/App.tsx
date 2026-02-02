@@ -47,6 +47,9 @@ function App() {
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
 
+  // Refresh trigger - increment to force data reload for current project
+  const [refreshCounter, setRefreshCounter] = useState(0);
+
   // Set token in API client when it changes
   useEffect(() => {
     apiClient.setToken(token);
@@ -89,32 +92,47 @@ function App() {
 
   // Load project data when selection changes
   useEffect(() => {
-    if (selectedProjectId) {
-      loadProjectData(selectedProjectId);
-    }
-  }, [selectedProjectId]);
+    if (!selectedProjectId) return;
 
-  const loadProjectData = async (projectId: number) => {
-    setLoadingData(true);
-    try {
-      const [rdmpData, activeRdmpData, samplesData, rawDataData, storageRootsData] = await Promise.all([
-        apiClient.getProjectRDMP(projectId).catch(() => null),
-        apiClient.getActiveRDMP(projectId).catch(() => null),
-        apiClient.getSamples(projectId),
-        apiClient.getRawData(projectId),
-        apiClient.getStorageRoots(projectId),
-      ]);
-      setRdmp(rdmpData);
-      setActiveRDMP(activeRdmpData);
-      setSamples(samplesData);
-      setRawData(rawDataData);
-      setStorageRoots(storageRootsData);
-    } catch (error) {
-      console.error('Failed to load project data:', error);
-    } finally {
-      setLoadingData(false);
-    }
-  };
+    // Track if this effect is still active (for race condition prevention)
+    let isActive = true;
+    const projectIdToLoad = selectedProjectId;
+
+    const doLoad = async () => {
+      setLoadingData(true);
+      try {
+        const [rdmpData, activeRdmpData, samplesData, rawDataData, storageRootsData] = await Promise.all([
+          apiClient.getProjectRDMP(projectIdToLoad).catch(() => null),
+          apiClient.getActiveRDMP(projectIdToLoad).catch(() => null),
+          apiClient.getSamples(projectIdToLoad),
+          apiClient.getRawData(projectIdToLoad),
+          apiClient.getStorageRoots(projectIdToLoad),
+        ]);
+
+        // Only update state if this effect is still active (project hasn't changed)
+        if (isActive) {
+          setRdmp(rdmpData);
+          setActiveRDMP(activeRdmpData);
+          setSamples(samplesData);
+          setRawData(rawDataData);
+          setStorageRoots(storageRootsData);
+          setLoadingData(false);
+        }
+      } catch (error) {
+        console.error('Failed to load project data:', error);
+        if (isActive) {
+          setLoadingData(false);
+        }
+      }
+    };
+
+    doLoad();
+
+    // Cleanup: mark this effect as inactive when project changes
+    return () => {
+      isActive = false;
+    };
+  }, [selectedProjectId, refreshCounter]);
 
   const handleLogin = useCallback(async (username: string, password: string) => {
     try {
@@ -157,17 +175,27 @@ function App() {
 
   // Handle project creation from wizard
   const handleProjectCreated = useCallback((project: Project) => {
+    // Add project to list
     setProjects(prev => [...prev, project]);
+    // Set loading state FIRST to prevent stale data from showing
+    setLoadingData(true);
+    // Clear all project-scoped data from previous project
+    setRdmp(null);
+    setActiveRDMP(null);
+    setSamples([]);
+    setRawData([]);
+    setStorageRoots([]);
+    setSelectedPendingIngest(null);
+    setSelectedSample(null);
+    // Then set the new project ID (will trigger loadProjectData via useEffect)
     setSelectedProjectId(project.id);
   }, []);
 
   const handleCreateProjectWizardClose = useCallback(() => {
     setShowCreateProjectWizard(false);
-    // Reload project data to get the active RDMP status
-    if (selectedProjectId) {
-      loadProjectData(selectedProjectId);
-    }
-  }, [selectedProjectId]);
+    // Data is already loaded via useEffect when selectedProjectId changes
+    // and activeRDMP is set via onRDMPActivated callback from wizard
+  }, []);
 
   const handleSelectPendingIngest = useCallback((ingest: PendingIngest) => {
     setSelectedPendingIngest(ingest);
@@ -175,11 +203,9 @@ function App() {
 
   const handleIngestComplete = useCallback(() => {
     setSelectedPendingIngest(null);
-    // Reload project data to get updated samples and raw data
-    if (selectedProjectId) {
-      loadProjectData(selectedProjectId);
-    }
-  }, [selectedProjectId]);
+    // Trigger data reload to get updated samples and raw data
+    setRefreshCounter(c => c + 1);
+  }, []);
 
   const handleIngestCancel = useCallback(() => {
     setSelectedPendingIngest(null);
@@ -201,11 +227,9 @@ function App() {
   const handleRDMPActivated = useCallback((activatedRDMP: RDMPVersion) => {
     // Set the active RDMP immediately to ensure UI consistency
     setActiveRDMP(activatedRDMP);
-    // Also reload project data to get any other updates
-    if (selectedProjectId) {
-      loadProjectData(selectedProjectId);
-    }
-  }, [selectedProjectId]);
+    // Trigger data reload to get any other updates
+    setRefreshCounter(c => c + 1);
+  }, []);
 
   // Show loading while checking auth
   if (authChecking) {
@@ -438,6 +462,7 @@ function App() {
         <CreateProjectWizard
           onClose={handleCreateProjectWizardClose}
           onProjectCreated={handleProjectCreated}
+          onRDMPActivated={(rdmp) => setActiveRDMP(rdmp)}
         />
       )}
     </div>

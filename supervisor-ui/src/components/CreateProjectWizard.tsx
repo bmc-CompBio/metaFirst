@@ -6,11 +6,12 @@ import type { Project, Supervisor, RDMPVersion } from '../types';
 interface CreateProjectWizardProps {
   onClose: () => void;
   onProjectCreated: (project: Project) => void;
+  onRDMPActivated?: (rdmp: RDMPVersion) => void;
 }
 
 type WizardStep = 'project' | 'rdmp' | 'activate';
 
-export function CreateProjectWizard({ onClose, onProjectCreated }: CreateProjectWizardProps) {
+export function CreateProjectWizard({ onClose, onProjectCreated, onRDMPActivated }: CreateProjectWizardProps) {
   const navigate = useNavigate();
 
   // Wizard state
@@ -123,7 +124,9 @@ export function CreateProjectWizard({ onClose, onProjectCreated }: CreateProject
     setSubmitting(true);
 
     try {
-      await apiClient.activateRDMP(createdRDMP.id);
+      const activatedRDMP = await apiClient.activateRDMP(createdRDMP.id);
+      // Notify parent about the activated RDMP immediately
+      onRDMPActivated?.(activatedRDMP);
       // Success - close wizard and navigate to project
       onClose();
       navigate(`/?project=${createdProject.id}`);

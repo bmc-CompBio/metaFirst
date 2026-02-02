@@ -27,6 +27,15 @@ export function RDMPManagement({ project, onRDMPActivated }: RDMPManagementProps
   // Activating state
   const [activatingId, setActivatingId] = useState<number | null>(null);
 
+  // Reset state when project changes to prevent showing stale data
+  useEffect(() => {
+    setRdmps([]);
+    setLoading(true);
+    setError(null);
+    setShowCreateForm(false);
+    setEditingId(null);
+  }, [project.id]);
+
   const loadRDMPs = useCallback(async () => {
     setLoading(true);
     setError(null);
