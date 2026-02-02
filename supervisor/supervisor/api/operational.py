@@ -11,8 +11,7 @@ from sqlalchemy.orm import Session
 from supervisor.database import get_db
 from supervisor.models.user import User
 from supervisor.models.project import Project
-from supervisor.models.membership import Membership
-from supervisor.api.deps import get_current_active_user, require_supervisor_role, require_any_supervisor_role
+from supervisor.api.deps import get_current_active_user, require_supervisor_role, require_any_supervisor_role, require_project_access
 from supervisor.models.supervisor_membership import SupervisorRole
 from supervisor.services.operational_service import OperationalService
 from supervisor.operational import MissingDSNError, OperationalDBError
@@ -83,19 +82,9 @@ class HeartbeatResponse(BaseModel):
 # -------------------------------------------------------------------------
 
 def _get_supervisor_id_for_project(db: Session, project_id: int, user: User) -> int:
-    """Get supervisor_id for a project, validating user access."""
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-
-    # Check membership
-    membership = db.query(Membership).filter(
-        Membership.project_id == project_id,
-        Membership.user_id == user.id
-    ).first()
-    if not membership:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this project")
-
+    """Get supervisor_id for a project, validating user access via supervisor membership."""
+    # require_project_access verifies supervisor membership and returns project
+    project = require_project_access(db, user, project_id)
     return project.supervisor_id
 
 

@@ -10,7 +10,6 @@ from supervisor.database import get_db
 from supervisor.models.user import User
 from supervisor.models.project import Project
 from supervisor.models.sample import Sample, SampleFieldValue, MetadataVisibility
-from supervisor.models.membership import Membership
 from supervisor.models.supervisor_membership import SupervisorRole
 from supervisor.schemas.sample import (
     Sample as SampleSchema,
@@ -18,7 +17,7 @@ from supervisor.schemas.sample import (
     SampleWithFields,
     FieldValueSet,
 )
-from supervisor.api.deps import get_current_active_user, require_supervisor_role
+from supervisor.api.deps import get_current_active_user, require_supervisor_role, require_project_access
 from supervisor.services.rdmp_service import get_current_rdmp, check_sample_completeness, validate_field_value
 from supervisor.services.permission_service import check_permission
 
@@ -39,14 +38,8 @@ def list_samples(
     offset: int = 0
 ):
     """List samples in a project."""
-    # Check membership
-    membership = (
-        db.query(Membership)
-        .filter(Membership.project_id == project_id, Membership.user_id == current_user.id)
-        .first()
-    )
-    if not membership:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this project")
+    # Verify access via supervisor membership
+    require_project_access(db, current_user, project_id)
 
     # Get samples
     samples = (
@@ -133,14 +126,8 @@ def get_sample(
     if not sample:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sample not found")
 
-    # Check membership
-    membership = (
-        db.query(Membership)
-        .filter(Membership.project_id == sample.project_id, Membership.user_id == current_user.id)
-        .first()
-    )
-    if not membership:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this project")
+    # Verify access via supervisor membership
+    require_project_access(db, current_user, sample.project_id)
 
     # Build fields dict
     fields_dict = {

@@ -9,7 +9,6 @@ from sqlalchemy.orm import Session
 from supervisor.database import get_db
 from supervisor.models.user import User
 from supervisor.models.project import Project
-from supervisor.models.membership import Membership
 from supervisor.models.storage import StorageRoot, StorageRootMapping
 from supervisor.models.raw_data import RawDataItem, PathChange
 from supervisor.models.sample import Sample, SampleFieldValue
@@ -31,7 +30,7 @@ from supervisor.schemas.storage import (
     SampleIdDetectionInfo,
 )
 from supervisor.services.sample_id_service import extract_sample_id_from_filename
-from supervisor.api.deps import get_current_active_user
+from supervisor.api.deps import get_current_active_user, require_project_access
 from supervisor.services.permission_service import check_permission
 from supervisor.services.audit_service import (
     log_create,
@@ -122,16 +121,8 @@ def list_storage_roots(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ):
     """List storage roots for a project."""
-    # Check membership
-    membership = (
-        db.query(Membership)
-        .filter(Membership.project_id == project_id, Membership.user_id == current_user.id)
-        .first()
-    )
-    if not membership:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this project"
-        )
+    # Verify access via supervisor membership
+    require_project_access(db, current_user, project_id)
 
     storage_roots = (
         db.query(StorageRoot).filter(StorageRoot.project_id == project_id).all()
@@ -163,19 +154,8 @@ def create_or_update_mapping(
             status_code=status.HTTP_404_NOT_FOUND, detail="Storage root not found"
         )
 
-    # Check membership in the storage root's project
-    membership = (
-        db.query(Membership)
-        .filter(
-            Membership.project_id == storage_root.project_id,
-            Membership.user_id == current_user.id,
-        )
-        .first()
-    )
-    if not membership:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this project"
-        )
+    # Verify access via supervisor membership
+    require_project_access(db, current_user, storage_root.project_id)
 
     # Check if mapping already exists for this user
     existing = (
@@ -247,19 +227,8 @@ def list_mappings(
             status_code=status.HTTP_404_NOT_FOUND, detail="Storage root not found"
         )
 
-    # Check membership
-    membership = (
-        db.query(Membership)
-        .filter(
-            Membership.project_id == storage_root.project_id,
-            Membership.user_id == current_user.id,
-        )
-        .first()
-    )
-    if not membership:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this project"
-        )
+    # Verify access via supervisor membership
+    require_project_access(db, current_user, storage_root.project_id)
 
     # Check if user can see all mappings (has can_manage_rdmp permission)
     can_see_all = check_permission(
@@ -403,16 +372,8 @@ def list_raw_data_items(
     offset: int = Query(0, ge=0),
 ):
     """List raw data items in a project."""
-    # Check membership
-    membership = (
-        db.query(Membership)
-        .filter(Membership.project_id == project_id, Membership.user_id == current_user.id)
-        .first()
-    )
-    if not membership:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this project"
-        )
+    # Verify access via supervisor membership
+    require_project_access(db, current_user, project_id)
 
     # Build query
     query = db.query(RawDataItem).filter(RawDataItem.project_id == project_id)
@@ -463,19 +424,8 @@ def get_raw_data_item(
             status_code=status.HTTP_404_NOT_FOUND, detail="Raw data item not found"
         )
 
-    # Check membership
-    membership = (
-        db.query(Membership)
-        .filter(
-            Membership.project_id == item.project_id,
-            Membership.user_id == current_user.id,
-        )
-        .first()
-    )
-    if not membership:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this project"
-        )
+    # Verify access via supervisor membership
+    require_project_access(db, current_user, item.project_id)
 
     storage_root_name = item.storage_root.name if item.storage_root else None
     sample_identifier = item.sample.sample_identifier if item.sample else None
@@ -614,19 +564,8 @@ def get_path_history(
             status_code=status.HTTP_404_NOT_FOUND, detail="Raw data item not found"
         )
 
-    # Check membership
-    membership = (
-        db.query(Membership)
-        .filter(
-            Membership.project_id == item.project_id,
-            Membership.user_id == current_user.id,
-        )
-        .first()
-    )
-    if not membership:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this project"
-        )
+    # Verify access via supervisor membership
+    require_project_access(db, current_user, item.project_id)
 
     path_changes = (
         db.query(PathChange)
@@ -743,16 +682,8 @@ def list_pending_ingests(
     status_filter: str | None = Query(None, description="Filter by status (PENDING, COMPLETED, CANCELLED)"),
 ):
     """List pending ingests for a project."""
-    # Check membership
-    membership = (
-        db.query(Membership)
-        .filter(Membership.project_id == project_id, Membership.user_id == current_user.id)
-        .first()
-    )
-    if not membership:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this project"
-        )
+    # Verify access via supervisor membership
+    require_project_access(db, current_user, project_id)
 
     # Build query
     query = db.query(PendingIngest).filter(PendingIngest.project_id == project_id)
@@ -827,19 +758,8 @@ def get_pending_ingest(
             status_code=status.HTTP_404_NOT_FOUND, detail="Pending ingest not found"
         )
 
-    # Check membership
-    membership = (
-        db.query(Membership)
-        .filter(
-            Membership.project_id == item.project_id,
-            Membership.user_id == current_user.id,
-        )
-        .first()
-    )
-    if not membership:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Not a member of this project"
-        )
+    # Verify access via supervisor membership
+    require_project_access(db, current_user, item.project_id)
 
     storage_root_name = item.storage_root.name if item.storage_root else None
     project_name = item.project.name if item.project else None
