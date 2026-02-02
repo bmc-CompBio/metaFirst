@@ -5,6 +5,7 @@ interface ProjectSelectorProps {
   selectedProjectId: number | null;
   onSelect: (projectId: number) => void;
   loading: boolean;
+  onCreateProject?: () => void;
 }
 
 export function ProjectSelector({
@@ -12,13 +13,10 @@ export function ProjectSelector({
   selectedProjectId,
   onSelect,
   loading,
+  onCreateProject,
 }: ProjectSelectorProps) {
   if (loading) {
     return <div style={styles.loading}>Loading projects...</div>;
-  }
-
-  if (projects.length === 0) {
-    return <div style={styles.empty}>No projects available</div>;
   }
 
   return (
@@ -28,16 +26,28 @@ export function ProjectSelector({
         value={selectedProjectId ?? ''}
         onChange={(e) => onSelect(Number(e.target.value))}
         style={styles.select}
+        disabled={projects.length === 0}
       >
-        <option value="" disabled>
-          Choose a project...
-        </option>
-        {projects.map((project) => (
-          <option key={project.id} value={project.id}>
-            {project.name}
-          </option>
-        ))}
+        {projects.length === 0 ? (
+          <option value="">No projects available</option>
+        ) : (
+          <>
+            <option value="" disabled>
+              Choose a project...
+            </option>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </>
+        )}
       </select>
+      {onCreateProject && (
+        <button style={styles.createButton} onClick={onCreateProject}>
+          + Create Project
+        </button>
+      )}
     </div>
   );
 }
@@ -65,7 +75,15 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#666',
     fontStyle: 'italic',
   },
-  empty: {
-    color: '#999',
+  createButton: {
+    padding: '8px 16px',
+    fontSize: '14px',
+    fontWeight: 500,
+    background: '#2563eb',
+    border: 'none',
+    borderRadius: '6px',
+    color: '#fff',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
   },
 };

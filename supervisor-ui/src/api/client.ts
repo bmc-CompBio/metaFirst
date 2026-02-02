@@ -1,4 +1,4 @@
-import type { Project, RDMP, Sample, RawDataItem, User, StorageRoot, PendingIngest, PendingIngestFinalize, RDMPVersion, ProjectUpdate, RDMPCreate, RDMPUpdate } from '../types';
+import type { Project, RDMP, Sample, RawDataItem, User, StorageRoot, PendingIngest, PendingIngestFinalize, RDMPVersion, ProjectUpdate, RDMPCreate, RDMPUpdate, Supervisor, ProjectCreate } from '../types';
 
 const API_BASE = '/api';
 
@@ -66,9 +66,37 @@ class ApiClient {
     return this.request<Project>(`/projects/${projectId}`);
   }
 
+  async createProject(data: ProjectCreate): Promise<Project> {
+    return this.request<Project>('/projects/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Supervisors
+  async getSupervisors(): Promise<Supervisor[]> {
+    return this.request<Supervisor[]>('/supervisors/');
+  }
+
   // RDMP
   async getProjectRDMP(projectId: number): Promise<RDMP> {
     return this.request<RDMP>(`/rdmp/projects/${projectId}/rdmp`);
+  }
+
+  async getActiveRDMP(projectId: number): Promise<RDMPVersion | null> {
+    const response = await fetch(`${API_BASE}/projects/${projectId}/rdmps/active`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.token ? { 'Authorization': `Bearer ${this.token}` } : {}),
+      },
+    });
+    if (!response.ok) {
+      if (response.status === 404) return null;
+      const error = await response.json().catch(() => ({ detail: 'Request failed' }));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    return data || null;
   }
 
   // Samples

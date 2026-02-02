@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import type { PendingIngest, Project, StorageRoot } from '../types';
 
@@ -6,9 +7,11 @@ interface IngestInboxProps {
   project: Project;
   onSelectIngest: (ingest: PendingIngest) => void;
   storageRoots: StorageRoot[];
+  hasActiveRDMP?: boolean;
 }
 
-export function IngestInbox({ project, onSelectIngest, storageRoots }: IngestInboxProps) {
+export function IngestInbox({ project, onSelectIngest, storageRoots, hasActiveRDMP = true }: IngestInboxProps) {
+  const navigate = useNavigate();
   const [pendingIngests, setPendingIngests] = useState<PendingIngest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -89,6 +92,27 @@ export function IngestInbox({ project, onSelectIngest, storageRoots }: IngestInb
         </button>
       </div>
 
+      {/* Blocking banner when no active RDMP */}
+      {!hasActiveRDMP && (
+        <div style={styles.blockedBanner}>
+          <div style={styles.blockedContent}>
+            <span style={styles.blockedIcon}>&#9888;</span>
+            <div>
+              <p style={styles.blockedTitle}>Ingestion Blocked</p>
+              <p style={styles.blockedText}>
+                This project has no active RDMP. Activate an RDMP to enable data ingestion.
+              </p>
+            </div>
+          </div>
+          <button
+            style={styles.blockedButton}
+            onClick={() => navigate('/rdmps')}
+          >
+            Go to RDMPs
+          </button>
+        </div>
+      )}
+
       {pendingIngests.length === 0 ? (
         <div style={styles.empty}>
           <p>No pending files to ingest.</p>
@@ -101,8 +125,11 @@ export function IngestInbox({ project, onSelectIngest, storageRoots }: IngestInb
           {pendingIngests.map((ingest) => (
             <div
               key={ingest.id}
-              style={styles.card}
-              onClick={() => onSelectIngest(ingest)}
+              style={{
+                ...styles.card,
+                ...(hasActiveRDMP ? {} : styles.cardDisabled),
+              }}
+              onClick={() => hasActiveRDMP && onSelectIngest(ingest)}
             >
               <div style={styles.cardMain}>
                 <div style={styles.filePath}>{ingest.relative_path}</div>
@@ -247,5 +274,50 @@ const styles: Record<string, React.CSSProperties> = {
   arrow: {
     fontSize: '24px',
     color: '#9ca3af',
+  },
+  cardDisabled: {
+    opacity: 0.5,
+    cursor: 'not-allowed',
+  },
+  blockedBanner: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '16px',
+    background: '#fef2f2',
+    border: '1px solid #fecaca',
+    borderRadius: '8px',
+    marginBottom: '16px',
+  },
+  blockedContent: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '12px',
+  },
+  blockedIcon: {
+    fontSize: '20px',
+    color: '#dc2626',
+  },
+  blockedTitle: {
+    fontSize: '14px',
+    fontWeight: 600,
+    color: '#991b1b',
+    margin: '0 0 4px 0',
+  },
+  blockedText: {
+    fontSize: '13px',
+    color: '#b91c1c',
+    margin: 0,
+  },
+  blockedButton: {
+    padding: '8px 16px',
+    fontSize: '13px',
+    fontWeight: 500,
+    background: '#dc2626',
+    border: 'none',
+    borderRadius: '6px',
+    color: '#fff',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap',
   },
 };

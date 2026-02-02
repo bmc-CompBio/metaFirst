@@ -155,3 +155,17 @@ export interface RDMPUpdate {
   title?: string;
   content?: Record<string, unknown>;
 }
+
+export interface Supervisor {
+  id: number;
+  name: string;
+  description: string | null;
+  created_at: string;
+  is_active: boolean;
+}
+
+export interface ProjectCreate {
+  name: string;
+  description?: string;
+  supervisor_id: number;
+}

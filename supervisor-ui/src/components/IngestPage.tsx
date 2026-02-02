@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiClient } from '../api/client';
-import type { PendingIngest, RDMPField, Sample, StorageRoot, RDMP } from '../types';
+import type { PendingIngest, RDMPField, Sample, StorageRoot, RDMP, RDMPVersion } from '../types';
 
 interface IngestPageProps {
   onProjectLoaded?: (projectId: number) => void;
@@ -16,6 +16,7 @@ export function IngestPage({ onProjectLoaded, onIngestComplete }: IngestPageProp
   const [error, setError] = useState<string | null>(null);
   const [ingest, setIngest] = useState<PendingIngest | null>(null);
   const [rdmp, setRdmp] = useState<RDMP | null>(null);
+  const [activeRDMP, setActiveRDMP] = useState<RDMPVersion | null>(null);
   const [samples, setSamples] = useState<Sample[]>([]);
   const [storageRoots, setStorageRoots] = useState<StorageRoot[]>([]);
 
@@ -59,13 +60,15 @@ export function IngestPage({ onProjectLoaded, onIngestComplete }: IngestPageProp
         }
 
         // Fetch project-scoped data
-        const [rdmpData, samplesData, storageRootsData] = await Promise.all([
+        const [rdmpData, activeRdmpData, samplesData, storageRootsData] = await Promise.all([
           apiClient.getProjectRDMP(pendingIngest.project_id).catch(() => null),
+          apiClient.getActiveRDMP(pendingIngest.project_id).catch(() => null),
           apiClient.getSamples(pendingIngest.project_id),
           apiClient.getStorageRoots(pendingIngest.project_id),
         ]);
 
         setRdmp(rdmpData);
+        setActiveRDMP(activeRdmpData);
         setSamples(samplesData);
         setStorageRoots(storageRootsData);
       } catch (e) {
@@ -233,6 +236,32 @@ export function IngestPage({ onProjectLoaded, onIngestComplete }: IngestPageProp
         <button onClick={handleBack} style={styles.backButton}>
           Back to Inbox
         </button>
+      </div>
+    );
+  }
+
+  // Check if project has an active RDMP
+  if (!activeRDMP) {
+    return (
+      <div style={styles.pageContainer}>
+        <div style={styles.blockedContainer}>
+          <div style={styles.blockedIcon}>&#9888;</div>
+          <h2 style={styles.blockedTitle}>Ingestion Blocked</h2>
+          <p style={styles.blockedText}>
+            This project has no active RDMP. An RDMP must be activated before data can be ingested.
+          </p>
+          {ingest.project_name && (
+            <p style={styles.blockedProject}>Project: {ingest.project_name}</p>
+          )}
+          <div style={styles.blockedActions}>
+            <button onClick={handleBack} style={styles.cancelButton}>
+              Back to Inbox
+            </button>
+            <button onClick={() => navigate('/rdmps')} style={styles.submitButton}>
+              Go to RDMPs
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -635,5 +664,42 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '6px',
     color: '#fff',
     cursor: 'pointer',
+  },
+  blockedContainer: {
+    background: '#fff',
+    borderRadius: '8px',
+    border: '1px solid #fecaca',
+    maxWidth: '500px',
+    margin: '0 auto',
+    padding: '40px',
+    textAlign: 'center',
+  },
+  blockedIcon: {
+    fontSize: '48px',
+    color: '#dc2626',
+    marginBottom: '16px',
+  },
+  blockedTitle: {
+    fontSize: '20px',
+    fontWeight: 600,
+    color: '#991b1b',
+    margin: '0 0 12px 0',
+  },
+  blockedText: {
+    fontSize: '14px',
+    color: '#6b7280',
+    marginBottom: '16px',
+    lineHeight: 1.5,
+  },
+  blockedProject: {
+    fontSize: '14px',
+    fontWeight: 500,
+    color: '#374151',
+    marginBottom: '24px',
+  },
+  blockedActions: {
+    display: 'flex',
+    justifyContent: 'center',
+    gap: '12px',
   },
 };
