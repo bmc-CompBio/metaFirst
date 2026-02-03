@@ -12,10 +12,12 @@ import { SampleDetailModal } from './components/SampleDetailModal';
 import { ProjectSettings } from './components/ProjectSettings';
 import { RDMPManagement } from './components/RDMPManagement';
 import { CreateProjectWizard } from './components/CreateProjectWizard';
-import { NoActiveRDMPBanner } from './components/NoActiveRDMPBanner';
+import { ProjectStatusCallout } from './components/ProjectStatusCallout';
+import { hasPermission } from './components/PermissionHint';
 import { SupervisorMembers } from './components/SupervisorMembers';
 import { ProjectsOverview } from './components/ProjectsOverview';
-import type { User, Project, RDMP, Sample, RawDataItem, PendingIngest, StorageRoot, RDMPVersion } from './types';
+import { RolesAndPermissions } from './components/RolesAndPermissions';
+import type { User, Project, RDMP, Sample, RawDataItem, PendingIngest, StorageRoot, RDMPVersion, LabRole } from './types';
 
 function App() {
   const navigate = useNavigate();
@@ -41,6 +43,10 @@ function App() {
   const [samples, setSamples] = useState<Sample[]>([]);
   const [rawData, setRawData] = useState<RawDataItem[]>([]);
   const [storageRoots, setStorageRoots] = useState<StorageRoot[]>([]);
+
+  // Lab context state
+  const [labName, setLabName] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<LabRole | null>(null);
 
   // UI state
   const [showCreateProjectWizard, setShowCreateProjectWizard] = useState(false);
@@ -94,7 +100,12 @@ function App() {
 
   // Load project data when selection changes
   useEffect(() => {
-    if (!selectedProjectId) return;
+    if (!selectedProjectId) {
+      // Clear lab context when no project
+      setLabName(null);
+      setUserRole(null);
+      return;
+    }
 
     // Track if this effect is still active (for race condition prevention)
     let isActive = true;
@@ -103,12 +114,17 @@ function App() {
     const doLoad = async () => {
       setLoadingData(true);
       try {
-        const [rdmpData, activeRdmpData, samplesResponse, rawDataData, storageRootsData] = await Promise.all([
+        // First, get the project to get supervisor_id
+        const project = projects.find(p => p.id === projectIdToLoad);
+        const supervisorId = project?.supervisor_id;
+
+        const [rdmpData, activeRdmpData, samplesResponse, rawDataData, storageRootsData, labRoleData] = await Promise.all([
           apiClient.getProjectRDMP(projectIdToLoad).catch(() => null),
           apiClient.getActiveRDMP(projectIdToLoad).catch(() => null),
           apiClient.getSamples(projectIdToLoad),
           apiClient.getRawData(projectIdToLoad),
           apiClient.getStorageRoots(projectIdToLoad),
+          supervisorId ? apiClient.getMyLabRole(supervisorId).catch(() => null) : Promise.resolve(null),
         ]);
 
         // Only update state if this effect is still active (project hasn't changed)
@@ -118,6 +134,8 @@ function App() {
           setSamples(samplesResponse.items);
           setRawData(rawDataData);
           setStorageRoots(storageRootsData);
+          setLabName(labRoleData?.supervisor_name ?? null);
+          setUserRole(labRoleData?.role ?? null);
           setLoadingData(false);
         }
       } catch (error) {
@@ -134,7 +152,7 @@ function App() {
     return () => {
       isActive = false;
     };
-  }, [selectedProjectId, refreshCounter]);
+  }, [selectedProjectId, refreshCounter, projects]);
 
   const handleLogin = useCallback(async (username: string, password: string) => {
     try {
@@ -309,7 +327,7 @@ function App() {
 
   return (
     <div style={styles.app}>
-      <Header user={user} onLogout={handleLogout} />
+      <Header user={user} onLogout={handleLogout} labName={labName} userRole={userRole} />
 
       <main style={styles.main}>
         <Routes>
@@ -330,6 +348,12 @@ function App() {
           <Route
             path="/supervisors/:supervisorId/members"
             element={<SupervisorMembers />}
+          />
+
+          {/* Roles and Permissions documentation */}
+          <Route
+            path="/roles"
+            element={<RolesAndPermissions />}
           />
 
           {/* Direct ingest page - no project selection required */}
@@ -376,9 +400,13 @@ function App() {
                       ) : null}
                     </div>
 
-                    {/* No Active RDMP Warning Banner */}
-                    {!loadingData && !activeRDMP && (
-                      <NoActiveRDMPBanner projectId={selectedProject.id} />
+                    {/* Project Status Callout */}
+                    {!loadingData && selectedProject && (
+                      <ProjectStatusCallout
+                        projectId={selectedProject.id}
+                        rdmpStatus={activeRDMP ? 'ACTIVE' : 'NONE'}
+                        canActivate={hasPermission(userRole, 'PI')}
+                      />
                     )}
 
                     {/* Navigation tabs */}
@@ -436,6 +464,7 @@ function App() {
                         <ProjectSettings
                           project={selectedProject}
                           onProjectUpdated={handleProjectUpdated}
+                          userRole={userRole}
                         />
                       ) : (
                         <div style={styles.placeholder}>
@@ -451,6 +480,7 @@ function App() {
                         <RDMPManagement
                           project={selectedProject}
                           onRDMPActivated={handleRDMPActivated}
+                          userRole={userRole}
                         />
                       ) : (
                         <div style={styles.placeholder}>
