@@ -121,7 +121,7 @@ export function SupervisorMembers() {
   if (!supervisor) {
     return (
       <div style={styles.container}>
-        <p style={styles.error}>Supervisor not found</p>
+        <p style={styles.error}>Lab not found</p>
         <button style={styles.backButton} onClick={() => navigate('/')}>
           Back to Projects
         </button>

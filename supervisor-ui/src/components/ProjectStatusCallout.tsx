@@ -98,6 +98,8 @@ export function ProjectStatusCallout({ projectId, rdmpStatus, canActivate = fals
     <div
       data-testid="project-status-callout"
       data-rdmp-status={rdmpStatus}
+      role="alert"
+      aria-live="polite"
       style={{
         display: 'flex',
         alignItems: 'center',

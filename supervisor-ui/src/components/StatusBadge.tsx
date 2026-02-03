@@ -51,6 +51,8 @@ export function StatusBadge({ type, status, size = 'medium' }: StatusBadgeProps)
       data-testid="status-badge"
       data-type={type}
       data-status={status}
+      role="status"
+      aria-label={`RDMP status: ${config.label}`}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
