@@ -13,6 +13,22 @@ The following standard columns are optionally included:
 
 RDMP-derived columns are included based on the fields defined in rdmp_json.fields[].
 Only fields with known types (string, number, date, categorical) are mapped.
+
+## Append-only contract
+
+Adding new *optional* RDMP fields is a safe, non-breaking change: CSV files
+exported from an earlier RDMP version will still import successfully because
+missing optional columns default to empty/omitted.
+
+Adding a new *required* RDMP field is intentionally a breaking change for
+previously exported templates — the import will reject CSVs that lack the
+required column header. This is by design: required fields represent data
+the project considers incomplete without.
+
+Extra columns in the CSV that don't match any current RDMP field are
+silently ignored. The template_hash in audit logs records the column
+structure at export/import time for traceability, but is never used as
+an acceptance gate.
 """
 
 import csv
@@ -75,6 +91,10 @@ def derive_template_columns(rdmp: RDMPVersion) -> list[TemplateColumn]:
     - sample_name (required, system)
     - visibility (optional, system)
     - RDMP fields from rdmp_json.fields[]
+
+    When extending this function with new system columns, mark them
+    ``required=False`` to preserve backward compatibility with CSVs
+    exported from earlier RDMP versions.
     """
     columns = []
 
