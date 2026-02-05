@@ -3,6 +3,9 @@
 Read-only endpoint for day-2 operations. Summarises project operational
 state, RDMP health, and unresolved remediation tasks at the lab level.
 No enforcement logic — purely advisory.
+
+FROZEN for v0.5 (PR #6) — response schema and endpoint contract are
+stable. Bug fixes only until v0.6.
 """
 
 from typing import Annotated

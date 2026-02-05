@@ -6,6 +6,12 @@ and reflects current DB state only (no caching).
 
 This is a read-only, advisory service — it does not enforce anything.
 
+## v0.5 FREEZE (PR #6, merged 2026-02-05)
+##
+## This module is frozen for v0.5 except for bug fixes.
+## Do not add new needs-attention conditions, change severity mappings,
+## or alter the response shape until v0.6 planning.
+
 ## Needs-attention conditions (v0.5, append-only)
 
 Each condition has a fixed severity. New conditions may be appended
