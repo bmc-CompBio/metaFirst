@@ -263,6 +263,20 @@ function App() {
     setRefreshCounter(c => c + 1);
   }, []);
 
+  // Derive remediation tasks from project data (must be called unconditionally)
+  const remediationTasks = useRemediationTasks({
+    projectId: selectedProjectId ?? undefined,
+    samples,
+    rawData,
+    activeRDMP,
+    pendingIngests,
+    storageRoots,
+    hasDraftRDMP,
+  });
+
+  // Count pending remediation tasks for badge
+  const pendingTaskCount = remediationTasks.filter(t => t.priority !== 'completed').length;
+
   // Show loading while checking auth
   if (authChecking) {
     return (
@@ -279,20 +293,6 @@ function App() {
 
   const selectedProject = projects.find((p) => p.id === selectedProjectId);
   const fields = rdmp?.rdmp_json.fields || [];
-
-  // Derive remediation tasks from project data
-  const remediationTasks = useRemediationTasks({
-    projectId: selectedProjectId,
-    samples,
-    rawData,
-    activeRDMP,
-    pendingIngests,
-    storageRoots,
-    hasDraftRDMP,
-  });
-
-  // Count pending remediation tasks for badge
-  const pendingTaskCount = remediationTasks.filter(t => t.priority !== 'completed').length;
 
   // Render project-scoped content (metadata table or inbox)
   const renderProjectContent = (view: 'metadata' | 'inbox') => {
