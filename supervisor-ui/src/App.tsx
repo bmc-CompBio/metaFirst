@@ -265,7 +265,7 @@ function App() {
 
   // Derive remediation tasks from project data (must be called unconditionally)
   const remediationTasks = useRemediationTasks({
-    projectId: selectedProjectId ?? undefined,
+    projectId: selectedProjectId,
     samples,
     rawData,
     activeRDMP,
