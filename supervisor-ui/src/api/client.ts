@@ -1,4 +1,4 @@
-import type { Project, RDMP, Sample, RawDataItem, User, StorageRoot, PendingIngest, PendingIngestFinalize, RDMPVersion, ProjectUpdate, RDMPCreate, RDMPUpdate, Supervisor, ProjectCreate, SupervisorMember, SampleListResponse, LabRoleInfo } from '../types';
+import type { Project, RDMP, Sample, RawDataItem, User, StorageRoot, PendingIngest, PendingIngestFinalize, RDMPVersion, ProjectUpdate, RDMPCreate, RDMPUpdate, Supervisor, ProjectCreate, SupervisorMember, SampleListResponse, LabRoleInfo, LabStatusSummary } from '../types';
 
 const API_BASE = '/api';
 
@@ -227,6 +227,11 @@ class ApiClient {
     return this.request<RDMPVersion>(`/rdmps/${rdmpId}/activate`, {
       method: 'POST',
     });
+  }
+
+  // Lab Status Summary
+  async getLabStatusSummary(supervisorId: number): Promise<LabStatusSummary> {
+    return this.request<LabStatusSummary>(`/supervisors/${supervisorId}/status-summary`);
   }
 }
 
