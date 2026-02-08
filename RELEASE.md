@@ -1,5 +1,34 @@
 # Release Notes
 
+## v0.5.1 — Patch: Stability and Production Guards
+
+**Release date:** 2026-02-08
+
+Patch release addressing a production blank-page bug and adding minimal
+production-readiness guards.
+
+**Fixes:**
+- React hooks order violation causing blank page after login (ccb91b7)
+
+**Hardening:**
+- Backend startup guard rejects default dev secret key in production mode
+- React Error Boundary at app root prevents blank-page failures
+- Dev-mode visual banner makes Vite dev usage immediately visible
+
+---
+
+## v0.5.0 — Auditability, Multi-Sample Ingestion, Lab Status
+
+**Release date:** 2026-02-04
+
+**Highlights:**
+- Lab Activity Log with required reasons for sensitive actions
+- Multi-sample ingestion: one raw file to many samples via RDMP-derived CSV template, with preview, confirm, and transactional creation
+- Lab status summary endpoint with needs-attention panel
+- Authority hints for role-appropriate action guidance
+
+---
+
 ## v0.4.0 — Usability, Onboarding, Remediation UX Polish
 
 **Release date:** 2026-02-04
