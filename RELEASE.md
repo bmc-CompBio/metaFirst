@@ -72,7 +72,7 @@ This release focuses on improving user experience, clarity, and discoverability 
 
 **Release date:** 2026-02-02
 
-Completes the project lifecycle and governance UI. See [RELEASE_NOTES_v0.3.1.md](RELEASE_NOTES_v0.3.1.md) for full details.
+Completes the project lifecycle and governance UI.
 
 **Highlights:**
 - Create Project wizard with RDMP setup
