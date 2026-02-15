@@ -1,5 +1,10 @@
 # metaFirst
 
+**Researcher?** See the [plain-language intro](https://bmc-CompBio.github.io/metaFirst/) ([source](docs/index.md)) — no technical background needed.
+**Setting up?** Follow the [step-by-step install guide](https://bmc-CompBio.github.io/metaFirst/install) ([source](docs/install.md)).
+
+---
+
 A metadata-first Research Data Management system for life sciences. Metadata is collected centrally via RDMP-guided forms; raw data remains on user machines and lab storage.
 
 Licensed under the [MIT License](LICENSE).
@@ -155,3 +160,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/jso
 - [ARCHITECTURE.md](ARCHITECTURE.md) — system design, components, interaction flows
 - [ingest_helper/README.md](ingest_helper/README.md) — ingest helper configuration and usage
 - [supervisor/supervisor/discovery/](supervisor/supervisor/discovery/) — federated discovery index module
+
+## Roadmap: v0.5 focus
+
+v0.5 focuses on operational maturity: auditability (who did what, when, why), day-2 lab operations, governance transparency, and clearer remediation posture. See [docs/releases/v0.5.0-scope.md](docs/releases/v0.5.0-scope.md) for the scoped themes and the multi-sample ingestion MVP details.
